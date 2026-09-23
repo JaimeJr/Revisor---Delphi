@@ -1,0 +1,4 @@
+unit TestGatilhoAdverbioMente;
+interface
+implementation
+end.

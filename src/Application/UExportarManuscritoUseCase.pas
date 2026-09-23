@@ -1,0 +1,4 @@
+unit UExportarManuscritoUseCase;
+interface
+implementation
+end.

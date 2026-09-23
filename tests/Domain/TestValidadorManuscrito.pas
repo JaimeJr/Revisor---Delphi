@@ -1,0 +1,4 @@
+unit TestValidadorManuscrito;
+interface
+implementation
+end.

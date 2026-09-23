@@ -1,0 +1,4 @@
+unit UGatilhoAdjetivacaoDupla;
+interface
+implementation
+end.

@@ -1,0 +1,4 @@
+unit UGatilhoRepeticaoLexical;
+interface
+implementation
+end.

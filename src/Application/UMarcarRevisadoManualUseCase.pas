@@ -1,0 +1,4 @@
+unit UMarcarRevisadoManualUseCase;
+interface
+implementation
+end.

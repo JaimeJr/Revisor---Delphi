@@ -1,0 +1,65 @@
+# ─────────────────────────────────────────────
+# Chaves de API e segredos — NUNCA versionar
+# ─────────────────────────────────────────────
+/keys/*
+!/keys/.gitkeep
+*.key
+*.secret
+.env
+.env.*
+!/env.example
+
+# ─────────────────────────────────────────────
+# Binários e saída de compilação Delphi
+# ─────────────────────────────────────────────
+/bin/
+/__history/
+/__recovery/
+*.dcu
+*.dcuil
+*.dsk
+*.dproj.local
+*.dproj.ups
+*.identcache
+*.local
+*.map
+*.rsm
+*.stat
+*.skincfg
+
+# ─────────────────────────────────────────────
+# Executáveis
+# ─────────────────────────────────────────────
+*.exe
+*.dll
+*.bpl
+*.ocx
+*.so
+*.apk
+*.aab
+
+# ─────────────────────────────────────────────
+# Dados de runtime (logs, manuscritos do usuário)
+# ─────────────────────────────────────────────
+/data/logs/*
+!/data/logs/.gitkeep
+/data/manuscritos/*
+!/data/manuscritos/.gitkeep
+
+# ─────────────────────────────────────────────
+# Logs e temporários
+# ─────────────────────────────────────────────
+*.log
+*.tmp
+*.bak
+*.~*
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ─────────────────────────────────────────────
+# IDE
+# ─────────────────────────────────────────────
+.vscode/
+.idea/
+*.code-workspace

@@ -1,0 +1,4 @@
+unit UImportarManuscritoUseCase;
+interface
+implementation
+end.

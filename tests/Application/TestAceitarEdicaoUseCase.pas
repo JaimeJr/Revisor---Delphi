@@ -1,0 +1,4 @@
+unit TestAceitarEdicaoUseCase;
+interface
+implementation
+end.

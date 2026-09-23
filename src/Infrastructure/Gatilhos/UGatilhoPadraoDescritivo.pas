@@ -1,0 +1,4 @@
+unit UGatilhoPadraoDescritivo;
+interface
+implementation
+end.

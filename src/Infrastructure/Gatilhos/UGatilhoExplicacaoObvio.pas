@@ -1,0 +1,4 @@
+unit UGatilhoExplicacaoObvio;
+interface
+implementation
+end.
