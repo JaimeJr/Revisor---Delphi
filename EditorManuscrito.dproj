@@ -125,8 +125,29 @@
         </DelphiCompile>
         <DCCReference Include="src\Presentation\Forms\frmPrincipal.pas">
             <Form>Form1</Form>
-            <FormType>dfm</FormType>
         </DCCReference>
+        <DCCReference Include="src\Domain\UValores.pas"/>
+        <DCCReference Include="src\Domain\UManuscrito.pas"/>
+        <DCCReference Include="src\Domain\UEdicaoSugerida.pas"/>
+        <DCCReference Include="src\Domain\UAnomaliaParser.pas"/>
+        <DCCReference Include="src\Domain\UServicosDominio.pas"/>
+        <DCCReference Include="src\Domain\UAnomaliaParse.pas"/>
+        <DCCReference Include="src\Domain\UChamada.pas"/>
+        <DCCReference Include="src\Domain\Contratos\UIParserManuscrito.pas"/>
+        <DCCReference Include="src\Domain\Contratos\UIDocxWriter.pas"/>
+        <DCCReference Include="src\Domain\Contratos\UIDocxReader.pas"/>
+        <DCCReference Include="src\Domain\Contratos\UIAntesRepository.pas"/>
+        <DCCReference Include="src\Domain\Contratos\UINovoRepository.pas"/>
+        <DCCReference Include="src\Infrastructure\Config\UConfigApp.pas"/>
+        <DCCReference Include="src\Infrastructure\Config\UKeyLoader.pas"/>
+        <DCCReference Include="src\Domain\Contratos\UIRespostaRepository.pas"/>
+        <DCCReference Include="src\Infrastructure\Repos\UAntesJsonRepository.pas"/>
+        <DCCReference Include="src\Infrastructure\Repos\UNovoJsonRepository.pas"/>
+        <DCCReference Include="src\Infrastructure\Repos\UEnvioJsonRepository.pas"/>
+        <DCCReference Include="src\Domain\Contratos\UIEnvioRepository.pas"/>
+        <DCCReference Include="src\Infrastructure\Repos\UViciosJsonRepository.pas"/>
+        <DCCReference Include="src\Domain\Contratos\UIViciosRepository.pas"/>
+        <DCCReference Include="src\Domain\UVicio.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>
@@ -149,6 +170,12 @@
                 </Source>
             </Delphi.Personality>
             <Deployment Version="5">
+                <DeployFile LocalName="Win32\Debug\EditorManuscrito.exe" Configuration="Debug" Class="ProjectOutput">
+                    <Platform Name="Win32">
+                        <RemoteName>EditorManuscrito.exe</RemoteName>
+                        <Overwrite>true</Overwrite>
+                    </Platform>
+                </DeployFile>
                 <DeployFile LocalName="Win32\Debug\EditorManuscrito.exe" Configuration="Debug" Class="ProjectOutput">
                     <Platform Name="Win32">
                         <RemoteName>EditorManuscrito.exe</RemoteName>
