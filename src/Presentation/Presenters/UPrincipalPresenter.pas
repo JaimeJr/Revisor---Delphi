@@ -5,21 +5,18 @@
   ─────────────────────────────────────────────────────────────
   Presenter da tela principal.
 
-  Modelo atual (após simplificação do painel direito):
-    • Seleção é por CENA, exclusivamente via árvore.
-    • O painel direito só exibe o capítulo (um TMemo por cena).
-    • Não há checkbox por parágrafo.
+  Modelo:
+    • Árvore: Ato > Capítulo > Cena. Só cena carrega o painel.
+    • Painel direito: uma cena por vez, com checkbox por
+      parágrafo.
+    • Revisão: usa os marcados; se nenhum, todos da cena.
+    • Marcar revisados: mesma regra.
 
-  Estado da sessão no Presenter:
-    • FManuscrito            — Novo.JSON em memória
-    • FParseLog              — log de anomalias do parse
-    • FCaminho*              — caminhos dos JSONs da sessão
-    • FCenaSelecionadaAtual  — cena em foco (vazio = nenhuma)
-
-  Ownership:
-    • FManuscrito e FParseLog: do Presenter (desanexados do
-      TImportacao no OnImportar).
-    • Não é dono do CommandStack (compartilhado).
+  Caminhos da sessão:
+    • FCaminhoAntes, FCaminhoNovo, FCaminhoVicios,
+      FCaminhoParseLog, FCaminhoEnvio, FCaminhoResposta.
+    • Envio e Resposta são derivados do Antes na importação.
+    • Todos são propagados para TChamada e TContextoRevisao.
   ─────────────────────────────────────────────────────────────
 }
 
@@ -52,63 +49,62 @@ type
     FView: IPrincipalView;
     FMediador: IMediadorApp;
 
-    // ─── UseCases ───
     FImportarUC: TImportarManuscritoUseCase;
     FExportarUC: TExportarManuscritoUseCase;
     FRevisarUC: TRevisarCenaUseCase;
     FManterVicioUC: TManterVicioUseCase;
     FMarcarRevisadoUC: TMarcarRevisadoManualUseCase;
 
-    // ─── Infra mínima ───
     FNovoRepo: INovoRepository;
     FRespostaRepo: IRespostaRepository;
     FViciosRepo: IViciosRepository;
     FCommandStack: TCommandStack;
 
-    // ─── Estado da sessão ───
     FManuscrito: TManuscrito;
     FParseLog: TParseLog;
     FCaminhoAntes: string;
     FCaminhoNovo: string;
     FCaminhoVicios: string;
     FCaminhoParseLog: string;
+    FCaminhoEnvio: string;
+    FCaminhoResposta: string;
     FCenaSelecionadaAtual: TID;
     FModoAtual: TModoEnvio;
 
-    // ─── Handlers dos eventos da View ───
     procedure OnImportar;
     procedure OnExportar;
     procedure OnAbrirVicios;
     procedure OnSelecionarCena(const ACenaID: TID);
+    procedure OnMarcarParagrafo(const AParagrafoID: TID;
+      const AMarcado: Boolean);
     procedure OnSelecionarVicio;
     procedure OnRevisar;
     procedure OnDesfazer;
     procedure OnMarcarRevisados;
     procedure OnFechar;
 
-    // ─── Auxiliares — popular View ───
     procedure PopularViewAPartirDoManuscrito;
     procedure PopularComboViciosDoCatalogo;
     procedure AtualizarBotoes;
     procedure AtualizarCustoAcumulado;
+    procedure RecarregarCenaEmFoco;
 
-    // ─── Auxiliares — construção de tipos UI ───
     function ConstruirArvore: TArray<TNoArvoreUI>;
     procedure ConstruirNo(const Ato: TAto; out ANo: TNoArvoreUI);
-    procedure ConstruirCapitulo(const ACapitulo: TCapitulo;
-      out ACapituloUI: TCapituloUI);
+    function ConstruirCenaUI(const ACena: TCena): TCenaUI;
     function EncontrarCapituloDoNo(const AID: TID): TCapitulo;
     function CapituloTemAnomalia(const ACapitulo: TCapitulo;
       out ASeveridade: TSeveridadeAnomalia): Boolean;
+    function TituloDaCena(const ACena: TCena): string;
 
-    // ─── Auxiliares — validação e conversão ───
     function PedirConfirmacaoRevisadosJaMarcados(
       const ASelecoes: TArray<TSelecaoUsuario>): Boolean;
-    function ConverterRespostaParaUI(const AResposta: TResposta): TRevisaoUI;
+    function ResolverParagrafosAlvo(const ACena: TCena): TArray<TID>;
 
-    // ─── Auxiliares — sessão ───
     function DerivarCaminhoVicios(const APastaDestino: string): string;
+    function DerivarCaminhoEnvio(const ACaminhoAntes: string): string;
     function DerivarCaminhoResposta(const ACaminhoAntes: string): string;
+
     procedure LimparSessao;
     procedure EncerrarSessaoAtual;
   public
@@ -202,6 +198,7 @@ begin
   FView.AoExportar := OnExportar;
   FView.AoAbrirVicios := OnAbrirVicios;
   FView.AoSelecionarCena := OnSelecionarCena;
+  FView.AoMarcarParagrafo := OnMarcarParagrafo;
   FView.AoSelecionarVicio := OnSelecionarVicio;
   FView.AoRevisar := OnRevisar;
   FView.AoClicarDesfazer := OnDesfazer;
@@ -210,7 +207,7 @@ begin
 
   FView.AtualizarTitulo('(nenhum manuscrito)');
   FView.LimparArvore;
-  FView.LimparCapitulo;
+  FView.LimparCena;
   AtualizarBotoes;
   AtualizarCustoAcumulado;
   FView.AtualizarBarraStatus(
@@ -218,7 +215,7 @@ begin
 end;
 
 // ────────────────────────────────────────────────────────────
-// Handlers dos eventos
+// Handlers
 // ────────────────────────────────────────────────────────────
 
 procedure TPrincipalPresenter.OnImportar;
@@ -252,6 +249,8 @@ begin
       FCaminhoNovo := Importacao.CaminhoNovo;
       FCaminhoVicios := Importacao.CaminhoVicios;
       FCaminhoParseLog := Importacao.CaminhoParseLog;
+      FCaminhoEnvio := DerivarCaminhoEnvio(FCaminhoAntes);
+      FCaminhoResposta := DerivarCaminhoResposta(FCaminhoAntes);
 
       FManuscrito := Importacao.ResultadoParse.DetachManuscrito;
       FParseLog := Importacao.ResultadoParse.DetachLog;
@@ -334,7 +333,6 @@ begin
   FMediador.AbrirVicios(FCaminhoVicios,
     procedure
     begin
-      // Recarrega o combo — o usuário pode ter adicionado vícios.
       PopularComboViciosDoCatalogo;
       AtualizarBotoes;
     end);
@@ -343,36 +341,30 @@ end;
 procedure TPrincipalPresenter.OnSelecionarCena(const ACenaID: TID);
 var
   Cena: TCena;
-  Capitulo: TCapitulo;
-  CapituloUI: TCapituloUI;
+  CenaUI: TCenaUI;
 begin
   if FManuscrito = nil then
     Exit;
 
-  // O ID pode ser de cena ou de capítulo.
-  // Tenta como cena primeiro; se falhar, tenta como capítulo.
   Cena := FManuscrito.CenaPorID(ACenaID);
-  if Assigned(Cena) then
-  begin
-    FCenaSelecionadaAtual := ACenaID;
-    Capitulo := EncontrarCapituloDoNo(ACenaID);
-  end
-  else
-  begin
-    FCenaSelecionadaAtual := '';
-    Capitulo := FManuscrito.CapituloPorID(ACenaID);
-  end;
-
-  if not Assigned(Capitulo) then
+  if not Assigned(Cena) then
     Exit;
 
-  ConstruirCapitulo(Capitulo, CapituloUI);
+  FCenaSelecionadaAtual := ACenaID;
+
+  CenaUI := ConstruirCenaUI(Cena);
   try
-    FView.ExibirCapitulo(CapituloUI);
+    FView.ExibirCena(CenaUI, TituloDaCena(Cena));
   finally
-    CapituloUI.Free;
+    CenaUI.Free;
   end;
 
+  AtualizarBotoes;
+end;
+
+procedure TPrincipalPresenter.OnMarcarParagrafo(const AParagrafoID: TID;
+  const AMarcado: Boolean);
+begin
   AtualizarBotoes;
 end;
 
@@ -388,9 +380,10 @@ var
   Resposta: TResposta;
   Contexto: TContextoRevisao;
   Cena: TCena;
-  Par: TParagrafo;
   Vicio: string;
   Lista: TList<TSelecaoUsuario>;
+  IDs: TArray<TID>;
+  ID: TID;
 begin
   if FManuscrito = nil then
   begin
@@ -418,11 +411,12 @@ begin
     Exit;
   end;
 
-  // Monta a seleção a partir dos parágrafos da cena.
+  IDs := ResolverParagrafosAlvo(Cena);
+
   Lista := TList<TSelecaoUsuario>.Create;
   try
-    for Par in Cena.Paragrafos do
-      Lista.Add(TSelecaoUsuario.Create(Par.ID, Vicio));
+    for ID in IDs do
+      Lista.Add(TSelecaoUsuario.Create(ID, Vicio));
     Selecoes := Lista.ToArray;
   finally
     Lista.Free;
@@ -439,6 +433,8 @@ begin
 
   Params.CaminhoNovo := FCaminhoNovo;
   Params.CaminhoVicios := FCaminhoVicios;
+  Params.CaminhoEnvio := FCaminhoEnvio;
+  Params.CaminhoResposta := FCaminhoResposta;
   Params.CenaID := FCenaSelecionadaAtual;
   Params.Modo := meCirurgico;
   Params.Selecoes := Selecoes;
@@ -467,6 +463,8 @@ begin
     Resposta,
     FCaminhoNovo,
     FCaminhoVicios,
+    FCaminhoEnvio,
+    FCaminhoResposta,
     FCenaSelecionadaAtual,
     meCirurgico,
     Resposta.IDChamada,
@@ -475,7 +473,7 @@ begin
   FMediador.AbrirRevisao(Contexto,
     procedure
     begin
-      PopularViewAPartirDoManuscrito;
+      RecarregarCenaEmFoco;
       AtualizarBotoes;
       AtualizarCustoAcumulado;
     end);
@@ -489,10 +487,9 @@ begin
     Exit;
 
   FCommandStack.DesfazerUltimo;
-
   FNovoRepo.SalvarAuto(FManuscrito, FCaminhoNovo);
 
-  PopularViewAPartirDoManuscrito;
+  RecarregarCenaEmFoco;
   AtualizarBotoes;
 end;
 
@@ -500,8 +497,6 @@ procedure TPrincipalPresenter.OnMarcarRevisados;
 var
   Cena: TCena;
   IDs: TArray<TID>;
-  Lista: TList<TID>;
-  Par: TParagrafo;
   Alterados: Integer;
 begin
   if FManuscrito = nil then
@@ -513,14 +508,7 @@ begin
   if not Assigned(Cena) then
     Exit;
 
-  Lista := TList<TID>.Create;
-  try
-    for Par in Cena.Paragrafos do
-      Lista.Add(Par.ID);
-    IDs := Lista.ToArray;
-  finally
-    Lista.Free;
-  end;
+  IDs := ResolverParagrafosAlvo(Cena);
 
   if Length(IDs) = 0 then
     Exit;
@@ -537,7 +525,7 @@ begin
     Exit;
   end;
 
-  PopularViewAPartirDoManuscrito;
+  RecarregarCenaEmFoco;
   AtualizarBotoes;
   FView.AtualizarBarraStatus(Format('%d parágrafo(s) alterado(s).',
     [Alterados]));
@@ -555,14 +543,11 @@ end;
 procedure TPrincipalPresenter.PopularViewAPartirDoManuscrito;
 var
   Arvore: TArray<TNoArvoreUI>;
-  Cena: TCena;
-  Capitulo: TCapitulo;
-  CapituloUI: TCapituloUI;
 begin
   if FManuscrito = nil then
   begin
     FView.LimparArvore;
-    FView.LimparCapitulo;
+    FView.LimparCena;
     FView.AtualizarTitulo('(nenhum manuscrito)');
     FCenaSelecionadaAtual := '';
     Exit;
@@ -570,14 +555,26 @@ begin
 
   FView.AtualizarTitulo(FManuscrito.Titulo);
 
-  // Reconstrói a árvore. A View assume os TNoArvoreUI.
   Arvore := ConstruirArvore;
   FView.ExibirArvore(Arvore);
 
-  // Recarrega o capítulo da cena selecionada, se houver.
+  FView.LimparCena;
+end;
+
+procedure TPrincipalPresenter.RecarregarCenaEmFoco;
+var
+  Cena: TCena;
+  CenaUI: TCenaUI;
+begin
+  if FManuscrito = nil then
+  begin
+    FView.LimparCena;
+    Exit;
+  end;
+
   if FCenaSelecionadaAtual = '' then
   begin
-    FView.LimparCapitulo;
+    FView.LimparCena;
     Exit;
   end;
 
@@ -585,22 +582,15 @@ begin
   if not Assigned(Cena) then
   begin
     FCenaSelecionadaAtual := '';
-    FView.LimparCapitulo;
+    FView.LimparCena;
     Exit;
   end;
 
-  Capitulo := EncontrarCapituloDoNo(FCenaSelecionadaAtual);
-  if not Assigned(Capitulo) then
-  begin
-    FView.LimparCapitulo;
-    Exit;
-  end;
-
-  ConstruirCapitulo(Capitulo, CapituloUI);
+  CenaUI := ConstruirCenaUI(Cena);
   try
-    FView.ExibirCapitulo(CapituloUI);
+    FView.ExibirCena(CenaUI, TituloDaCena(Cena));
   finally
-    CapituloUI.Free;
+    CenaUI.Free;
   end;
 end;
 
@@ -628,14 +618,13 @@ begin
     Catalogo.Free;
   end;
 
-  //FView.PopularComboVicios(IDs);
+  FView.PopularComboVicios(IDs);
 end;
 
 procedure TPrincipalPresenter.AtualizarBotoes;
 var
   Cena: TCena;
-  TemCena: Boolean;
-  TemVicio: Boolean;
+  TemCena, TemVicio: Boolean;
 begin
   Cena := nil;
   if (FManuscrito <> nil) and (FCenaSelecionadaAtual <> '') then
@@ -674,7 +663,7 @@ begin
 end;
 
 // ────────────────────────────────────────────────────────────
-// Auxiliares — construção de tipos UI
+// Construção de tipos UI
 // ────────────────────────────────────────────────────────────
 
 function TPrincipalPresenter.ConstruirArvore: TArray<TNoArvoreUI>;
@@ -745,40 +734,39 @@ begin
   end;
 end;
 
-procedure TPrincipalPresenter.ConstruirCapitulo(const ACapitulo: TCapitulo;
-  out ACapituloUI: TCapituloUI);
+function TPrincipalPresenter.ConstruirCenaUI(const ACena: TCena): TCenaUI;
 var
-  Cena: TCena;
   Par: TParagrafo;
-  CenaUI: TCenaUI;
   ParUI: TParagrafoUI;
 begin
-  ACapituloUI := TCapituloUI.Create;
-  ACapituloUI.CapituloID := ACapitulo.ID;
-  ACapituloUI.Numero := ACapitulo.Numero;
-  ACapituloUI.Titulo := ACapitulo.Titulo;
+  Result := TCenaUI.Create;
+  Result.CenaID := ACena.ID;
+  Result.Numero := ACena.Numero;
 
-  for Cena in ACapitulo.Cenas do
+  for Par in ACena.Paragrafos do
   begin
-    CenaUI := TCenaUI.Create;
-    CenaUI.CenaID := Cena.ID;
-    CenaUI.Numero := Cena.Numero;
-
-    for Par in Cena.Paragrafos do
-    begin
-      ParUI := TParagrafoUI.Create;
-      ParUI.ParagrafoID := Par.ID;
-      ParUI.Ordem := Par.Ordem;
-      ParUI.Texto := Par.Texto;
-      ParUI.HashParagrafo := Par.Hash;
-      ParUI.Status := Par.Status;
-      ParUI.NumChunks := Par.NumChunks;
-      ParUI.VicioMarcado := '';
-      CenaUI.Paragrafos.Add(ParUI);
-    end;
-
-    ACapituloUI.Cenas.Add(CenaUI);
+    ParUI := TParagrafoUI.Create;
+    ParUI.ParagrafoID := Par.ID;
+    ParUI.Ordem := Par.Ordem;
+    ParUI.Texto := Par.Texto;
+    ParUI.HashParagrafo := Par.Hash;
+    ParUI.Status := Par.Status;
+    ParUI.NumChunks := Par.NumChunks;
+    ParUI.VicioMarcado := '';
+    Result.Paragrafos.Add(ParUI);
   end;
+end;
+
+function TPrincipalPresenter.TituloDaCena(const ACena: TCena): string;
+var
+  Cap: TCapitulo;
+begin
+  Cap := EncontrarCapituloDoNo(ACena.ID);
+  if Assigned(Cap) then
+    Result := Format('Cap. %d — Cena %d.%d',
+      [Cap.Numero, Cap.Numero, ACena.Numero])
+  else
+    Result := Format('Cena %d', [ACena.Numero]);
 end;
 
 function TPrincipalPresenter.EncontrarCapituloDoNo(
@@ -831,8 +819,42 @@ begin
 end;
 
 // ────────────────────────────────────────────────────────────
-// Auxiliares — validação e conversão
+// Validação
 // ────────────────────────────────────────────────────────────
+
+function TPrincipalPresenter.ResolverParagrafosAlvo(
+  const ACena: TCena): TArray<TID>;
+var
+  IDsMarcados: TArray<TID>;
+  Lista: TList<TID>;
+  Par: TParagrafo;
+  ID: TID;
+begin
+  IDsMarcados := FView.ParagrafosSelecionadosIDs;
+
+  if Length(IDsMarcados) > 0 then
+  begin
+    Lista := TList<TID>.Create;
+    try
+      for ID in IDsMarcados do
+        if Assigned(ACena.ParagrafoPorID(ID)) then
+          Lista.Add(ID);
+      Result := Lista.ToArray;
+    finally
+      Lista.Free;
+    end;
+    Exit;
+  end;
+
+  Lista := TList<TID>.Create;
+  try
+    for Par in ACena.Paragrafos do
+      Lista.Add(Par.ID);
+    Result := Lista.ToArray;
+  finally
+    Lista.Free;
+  end;
+end;
 
 function TPrincipalPresenter.PedirConfirmacaoRevisadosJaMarcados(
   const ASelecoes: TArray<TSelecaoUsuario>): Boolean;
@@ -853,61 +875,27 @@ begin
     Exit(True);
 
   Result := FView.Confirmar(Format(
-    '%d dos %d parágrafos da cena já foram revisados. ' +
+    '%d dos %d parágrafos selecionados já foram revisados. ' +
     'Revisar mesmo assim (custo extra de IA)?',
     [JaRevisados, Length(ASelecoes)]));
 end;
 
-function TPrincipalPresenter.ConverterRespostaParaUI(
-  const AResposta: TResposta): TRevisaoUI;
-var
-  Ed: TEdicaoSugerida;
-  UI: TEdicaoUI;
-  Par: TParagrafo;
-begin
-  Result := TRevisaoUI.Create;
-  Result.CenaID := FCenaSelecionadaAtual;
-  Result.Modo := meCirurgico;
-  Result.IDChamada := AResposta.IDChamada;
-  Result.StatusParse := AResposta.StatusParse;
-  Result.VicioGeral := AResposta.VicioGeral;
-  Result.ErroParse := AResposta.ErroParse;
-  Result.RespostaBruta := AResposta.RespostaBruta;
-  Result.TokensPrompt := AResposta.TokensPrompt;
-  Result.TokensResposta := AResposta.TokensResposta;
-  Result.CustoEstimado := AResposta.CustoEstimado;
-
-  for Ed in AResposta.Edicoes do
-  begin
-    UI := TEdicaoUI.Create;
-    UI.Chave := Ed.Chave;
-    UI.ParagrafoID := Ed.ParagrafoID;
-    UI.ChunkIndex := Ed.ChunkIndex;
-    UI.VicioID := Ed.VicioID;
-    UI.TextoSugerido := Ed.Sugerido;
-    UI.Motivo := Ed.Motivo;
-    UI.DentroEscopo := AResposta.EdicaoDentroDoEscopo(Ed);
-    UI.Selecionada := False;
-    UI.Aplicada := Ed.Aplicada;
-
-    Par := FManuscrito.ParagrafoPorID(Ed.ParagrafoID);
-    if Assigned(Par) then
-      UI.TextoAntigo := Par.Texto
-    else
-      UI.TextoAntigo := '';
-
-    Result.Edicoes.Add(UI);
-  end;
-end;
-
 // ────────────────────────────────────────────────────────────
-// Auxiliares — sessão
+// Sessão
 // ────────────────────────────────────────────────────────────
 
 function TPrincipalPresenter.DerivarCaminhoVicios(
   const APastaDestino: string): string;
 begin
   Result := TPath.Combine(APastaDestino, 'vicios.json');
+end;
+
+function TPrincipalPresenter.DerivarCaminhoEnvio(
+  const ACaminhoAntes: string): string;
+begin
+  Result := TPath.Combine(
+    TPath.GetDirectoryName(ACaminhoAntes),
+    TPath.GetFileNameWithoutExtension(ACaminhoAntes) + '_envio.json');
 end;
 
 function TPrincipalPresenter.DerivarCaminhoResposta(
@@ -924,6 +912,8 @@ begin
   FCaminhoNovo := '';
   FCaminhoVicios := '';
   FCaminhoParseLog := '';
+  FCaminhoEnvio := '';
+  FCaminhoResposta := '';
   FCenaSelecionadaAtual := '';
   FreeAndNil(FManuscrito);
   FreeAndNil(FParseLog);
@@ -934,7 +924,7 @@ begin
   LimparSessao;
   FCommandStack.Limpar;
   FView.LimparArvore;
-  FView.LimparCapitulo;
+  FView.LimparCena;
 end;
 
 end.

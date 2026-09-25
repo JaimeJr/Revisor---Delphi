@@ -6,16 +6,8 @@
   Configuração global da aplicação. Singleton, instanciado no
   boot, com a chave da API carregada do disco.
 
-  A chave NÃO é hardcoded nem passada por parâmetro — vem de
-  TKeyLoader no construtor. Se o arquivo não existir, a
-  instanciação falha e o erro aparece no boot (não na primeira
-  chamada de API).
-
-  Todos os valores têm default sensato. Nenhum precisa de
-  configuração para o sistema funcionar — só a chave.
-
-  Propriedades são read-only exceto as que o usuário pode
-  ajustar em tela de configuração (Temperature, MaxTokens).
+  A chave NÃO é hardcoded — vem de TKeyLoader no construtor.
+  Se o arquivo não existir, a instanciação falha no boot.
   ─────────────────────────────────────────────────────────────
 }
 
@@ -33,12 +25,12 @@ type
     FApiKey: string;
     FModelo: string;
     FEndpoint: string;
-    FPrecoInputPorMilhao: Double;
-    FPrecoOutputPorMilhao: Double;
     FTemperature: Double;
     FMaxTokens: Integer;
     FLimiteParagrafoPalavras: Integer;
     FTamanhoChunkPalavras: Integer;
+    FPrecoInputPorMilhao: Double;
+    FPrecoOutputPorMilhao: Double;
     FPastaDados: string;
     FPastaManuscritos: string;
     FPastaLogs: string;
@@ -46,19 +38,17 @@ type
     constructor Create;
     destructor Destroy; override;
 
-    // ─── Singleton ───
     class function Instancia: TConfigApp;
     class procedure Destruir;
 
     // ─── API ───
-    /// <summary>Chave DeepSeek carregada do disco. Read-only.</summary>
     property ApiKey: string read FApiKey;
-
-    // ─── Modelo / parâmetros ───
     property Modelo: string read FModelo write FModelo;
+    property Endpoint: string read FEndpoint write FEndpoint;
     property Temperature: Double read FTemperature write FTemperature;
     property MaxTokens: Integer read FMaxTokens write FMaxTokens;
-    property Endpoint: string read FEndpoint write FEndpoint;
+
+    // ─── Preços (USD por 1M tokens) ───
     property PrecoInputPorMilhao: Double
       read FPrecoInputPorMilhao write FPrecoInputPorMilhao;
     property PrecoOutputPorMilhao: Double
@@ -75,34 +65,10 @@ type
     property PastaManuscritos: string read FPastaManuscritos;
     property PastaLogs: string read FPastaLogs;
 
-    /// <summary>
-    ///   Caminho do Vicios.JSON padrão. Vive em /data/.
-    /// </summary>
     function CaminhoViciosJSON: string;
-
-    /// <summary>
-    ///   Dado o caminho de um Antes.JSON, retorna o caminho
-    ///   do Novo.JSON correspondente (mesmo diretório, sufixo
-    ///   "_novo").
-    /// </summary>
     function CaminhoNovoPara(const ACaminhoAntes: string): string;
-
-    /// <summary>
-    ///   Dado o caminho de um Antes.JSON, retorna o caminho
-    ///   do Envio.JSON correspondente.
-    /// </summary>
     function CaminhoEnvioPara(const ACaminhoAntes: string): string;
-
-    /// <summary>
-    ///   Dado o caminho de um Antes.JSON, retorna o caminho
-    ///   do Resposta.JSON correspondente.
-    /// </summary>
     function CaminhoRespostaPara(const ACaminhoAntes: string): string;
-
-    /// <summary>
-    ///   Dado o caminho de um Antes.JSON, retorna o caminho
-    ///   do parse.log correspondente.
-    /// </summary>
     function CaminhoParseLogPara(const ACaminhoAntes: string): string;
   end;
 
@@ -123,24 +89,25 @@ constructor TConfigApp.Create;
 begin
   inherited;
 
-  // Falha rápido se a chave não existir — erro no boot, não
-  // na primeira chamada de API.
+  // Falha rápido se a chave não existir.
   FApiKey := TKeyLoader.CarregarDeepSeekKey;
 
-  // Defaults — ajustáveis em tela de configuração futura.
+  // Defaults.
   FModelo := 'deepseek-chat';
+  FEndpoint := 'https://api.deepseek.com/chat/completions';
   FTemperature := 0.3;
   FMaxTokens := 1500;
   FLimiteParagrafoPalavras := 600;
   FTamanhoChunkPalavras := 300;
 
-  // Pastas de dados (relativas ao diretório do executável).
+  // Preços base (USD por 1M tokens).
+  FPrecoInputPorMilhao := 0.27;
+  FPrecoOutputPorMilhao := 1.10;
+
+  // Pastas de dados.
   FPastaDados := TPath.Combine(ExtractFilePath(ParamStr(0)), 'data');
   FPastaManuscritos := TPath.Combine(FPastaDados, 'manuscritos');
   FPastaLogs := TPath.Combine(FPastaDados, 'logs');
-  FEndpoint := 'https://api.deepseek.com/chat/completions';
-  FPrecoInputPorMilhao := 0.27;   // USD por 1M tokens de input
-  FPrecoOutputPorMilhao := 1.10;  // USD por 1M tokens de output
 end;
 
 destructor TConfigApp.Destroy;

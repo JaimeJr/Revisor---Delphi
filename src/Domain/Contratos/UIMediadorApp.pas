@@ -1,5 +1,6 @@
 ﻿unit UIMediadorApp;
 
+
 interface
 
 uses
@@ -10,16 +11,14 @@ uses
   UValores;
 
 type
-  /// <summary>
-  ///   Contexto que a frmRevisao precisa para operar:
-  ///   o manuscrito em memória, caminhos e a resposta da IA.
-  /// </summary>
   TContextoRevisao = class
   private
     FManuscrito: TManuscrito;
     FResposta: TResposta;
     FCaminhoNovo: string;
     FCaminhoVicios: string;
+    FCaminhoEnvio: string;
+    FCaminhoResposta: string;
     FCenaID: TID;
     FModo: TModoEnvio;
     FIDChamada: string;
@@ -27,62 +26,48 @@ type
   public
     constructor Create(const AManuscrito: TManuscrito;
       const AResposta: TResposta;
-      const ACaminhoNovo, ACaminhoVicios: string;
+      const ACaminhoNovo, ACaminhoVicios,
+      ACaminhoEnvio, ACaminhoResposta: string;
       const ACenaID: TID; const AModo: TModoEnvio;
       const AIDChamada: string;
       const AOwnedManuscrito: Boolean = False);
     destructor Destroy; override;
 
-    procedure SubstituirResposta(const ANova: TResposta);
     property Manuscrito: TManuscrito read FManuscrito;
     property Resposta: TResposta read FResposta;
     property CaminhoNovo: string read FCaminhoNovo;
     property CaminhoVicios: string read FCaminhoVicios;
+    property CaminhoEnvio: string read FCaminhoEnvio;
+    property CaminhoResposta: string read FCaminhoResposta;
     property CenaID: TID read FCenaID;
     property Modo: TModoEnvio read FModo;
     property IDChamada: string read FIDChamada;
+
+    procedure SubstituirResposta(const ANova: TResposta);
   end;
 
-  /// <summary>
-  ///   Callback que o Mediador invoca quando a frmRevisao fecha,
-  ///   para o Presenter principal atualizar a tela.
-  /// </summary>
   TProcRevisaoFechada = reference to procedure;
 
   IMediadorApp = interface
-    ['{67797E9B-9F9B-42AD-8C81-4140880E7936}']
-
-    /// <summary>
-    ///   Abre a frmRevisao com o contexto. O Mediador assume o
-    ///   ownership do AContexto e o libera quando a tela fechar.
-    ///   AOnFechada é chamada depois do fechamento.
-    /// </summary>
+    ['{3CC8D896-C788-4ABF-99D5-19EC92851831}']
     procedure AbrirRevisao(const AContexto: TContextoRevisao;
       const AOnFechada: TProcRevisaoFechada);
 
-    /// <summary>
-    ///   Abre a frmVicios. O Presenter principal repassa o
-    ///   caminho do Vicios.JSON via contexto.
-    /// </summary>
     procedure AbrirVicios(const ACaminhoVicios: string;
       const AOnFechada: TProcRevisaoFechada);
 
-    /// <summary>
-    ///   Abre a frmReenvio e devolve a observação digitada
-    ///   (ou '' se o usuário cancelou).
-    /// </summary>
     function PerguntarObservacaoReenvio: string;
+
     procedure ExecutarComLoading(const AMensagem: string;
       const AOperacao: TProc);
   end;
 
 implementation
 
-{ TContextoRevisao }
-
 constructor TContextoRevisao.Create(const AManuscrito: TManuscrito;
   const AResposta: TResposta;
-  const ACaminhoNovo, ACaminhoVicios: string;
+  const ACaminhoNovo, ACaminhoVicios,
+  ACaminhoEnvio, ACaminhoResposta: string;
   const ACenaID: TID; const AModo: TModoEnvio;
   const AIDChamada: string;
   const AOwnedManuscrito: Boolean);
@@ -92,6 +77,8 @@ begin
   FResposta := AResposta;
   FCaminhoNovo := ACaminhoNovo;
   FCaminhoVicios := ACaminhoVicios;
+  FCaminhoEnvio := ACaminhoEnvio;
+  FCaminhoResposta := ACaminhoResposta;
   FCenaID := ACenaID;
   FModo := AModo;
   FIDChamada := AIDChamada;
@@ -105,6 +92,7 @@ begin
     FManuscrito.Free;
   inherited;
 end;
+
 procedure TContextoRevisao.SubstituirResposta(const ANova: TResposta);
 begin
   if ANova = FResposta then

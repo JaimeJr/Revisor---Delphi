@@ -5,30 +5,9 @@
   ─────────────────────────────────────────────────────────────
   Caso de uso que orquestra uma revisão de cena.
 
-  Fluxo:
-    1. Carrega Novo.JSON (para pegar os textos atuais dos
-       parágrafos) e Vicios.JSON (para injetar dicas).
-    2. Monta a TChamada:
-       • Modo cirúrgico: usa as seleções do usuário
-         (ParagrafoID + VicioID por item).
-       • Modo varredura: pega todos os parágrafos da cena.
-         VicioID := VICIO_VARREDURA.
-    3. Aplica chunking em parágrafos > LIMITE_PARAGRAFO_PALAVRAS.
-    4. Deriva ViciosInjetados (cirúrgico: únicos das seleções;
-       varredura: catálogo inteiro).
-    5. Estima tokens.
-    6. Chama IRevisorIA.Revisar (síncrono).
-    7. Devolve a TResposta (ownership transferido).
-
-  Unificação:
-    • Cobre também o reenvio. Se Observacao vier preenchida,
-      é uma reanálise com instrução adicional. Não há UseCase
-      separado para reenvio.
-
-  O que NÃO faz:
-    • Não aceita nem recusa edições. Isso é o UseCase de aceite.
-    • Não persiste nada além do que o revisor já persiste
-      (Envio/Resposta.JSON são anexados lá dentro).
+  TParametrosRevisao agora carrega também CaminhoEnvio e
+  CaminhoResposta, que são propagados para a TChamada. Assim
+  o revisor sabe onde gravar os logs.
   ─────────────────────────────────────────────────────────────
 }
 
@@ -48,20 +27,17 @@ uses
   UValores;
 
 type
-  /// <summary>
-  ///   Item de seleção do usuário: um parágrafo com UM vício.
-  ///   O texto e o hash são preenchidos pelo UseCase.
-  /// </summary>
   TSelecaoUsuario = record
     ParagrafoID: TID;
     VicioID: string;
     constructor Create(const AParagrafoID: TID; const AVicioID: string);
   end;
 
-  /// <summary>Parâmetros completos de uma revisão.</summary>
   TParametrosRevisao = record
     CaminhoNovo: string;
     CaminhoVicios: string;
+    CaminhoEnvio: string;
+    CaminhoResposta: string;
     CenaID: TID;
     Modo: TModoEnvio;
     Selecoes: TArray<TSelecaoUsuario>;
@@ -93,16 +69,10 @@ type
       const ANovoRepo: INovoRepository;
       const AViciosRepo: IViciosRepository);
 
-    /// <summary>
-    ///   Executa a revisão. Devolve a TResposta (o chamador é
-    ///   responsável por liberá-la).
-    /// </summary>
     function Executar(const AParams: TParametrosRevisao): TResposta;
   end;
 
 implementation
-
-{ TSelecaoUsuario }
 
 constructor TSelecaoUsuario.Create(const AParagrafoID: TID;
   const AVicioID: string);
@@ -144,9 +114,8 @@ procedure TRevisarCenaUseCase.AdicionarChunksDoParagrafo(
   const AVicioID: string);
 var
   Chunks: TArray<string>;
-  I: Integer;
+  I, Total: Integer;
   Sel: TParagrafoSelecionado;
-  Total: Integer;
 begin
   Chunks := TCompressorPayload.DividirEmChunks(APar.Texto);
   Total := Length(Chunks);
@@ -202,11 +171,9 @@ var
 begin
   case AChamada.Modo of
     meCirurgico:
-      // Deriva das seleções — vícios únicos efetivamente marcados.
       AChamada.DerivarViciosInjetados;
 
     meVarredura:
-      // Injeta o catálogo inteiro.
       for V in ACatalogo.Categorias do
         AChamada.AdicionarVicioInjetado(V.ID);
   end;
@@ -220,11 +187,14 @@ var
   Cena: TCena;
   Chamada: TChamada;
 begin
-  // ─── Validações de entrada ───
   if AParams.CaminhoNovo = '' then
     raise EValorInvalido.Create('CaminhoNovo não pode ser vazio.');
   if AParams.CaminhoVicios = '' then
     raise EValorInvalido.Create('CaminhoVicios não pode ser vazio.');
+  if AParams.CaminhoEnvio = '' then
+    raise EValorInvalido.Create('CaminhoEnvio não pode ser vazio.');
+  if AParams.CaminhoResposta = '' then
+    raise EValorInvalido.Create('CaminhoResposta não pode ser vazio.');
   if AParams.CenaID = '' then
     raise EValorInvalido.Create('CenaID não pode ser vazio.');
 
@@ -232,7 +202,6 @@ begin
     raise EOperacaoInvalida.Create(
       'Modo cirúrgico exige pelo menos uma seleção de parágrafo.');
 
-  // ─── Carrega Novo.JSON e Vicios.JSON ───
   Novo := FNovoRepo.Carregar(AParams.CaminhoNovo);
   if Novo = nil then
     raise EOperacaoInvalida.CreateFmt(
@@ -247,12 +216,14 @@ begin
         raise EOperacaoInvalida.CreateFmt(
           'Cena "%s" não tem parágrafos.', [Cena.ID]);
 
-      // ─── Monta a TChamada ───
       Chamada := TChamada.Create;
       try
         Chamada.CenaID := AParams.CenaID;
         Chamada.Modo := AParams.Modo;
         Chamada.ObservacaoUsuario := AParams.Observacao.Trim;
+        Chamada.CaminhoNovo := AParams.CaminhoNovo;
+        Chamada.CaminhoEnvio := AParams.CaminhoEnvio;
+        Chamada.CaminhoResposta := AParams.CaminhoResposta;
 
         case AParams.Modo of
           meCirurgico:
@@ -264,10 +235,6 @@ begin
         AplicarViciosInjetados(Chamada, Catalogo);
         Chamada.EstimarTokensInput;
 
-        // ─── Chama o revisor ───
-        // O revisor calcula o hash, checa cache, anexa a Envio.JSON,
-        // monta o payload, chama a API, parseia, anexa a Resposta.JSON
-        // e devolve uma cópia.
         Result := FRevisor.Revisar(Chamada);
       finally
         Chamada.Free;

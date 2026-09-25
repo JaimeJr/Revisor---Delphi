@@ -3,24 +3,12 @@
 {
   UChamada.pas
   ─────────────────────────────────────────────────────────────
-  Value Objects que representam uma chamada de revisão à IA:
-  o que o usuário selecionou (TParagrafoSelecionado) e o
-  agregado da requisição (TChamada).
+  Value Objects que representam uma chamada de revisão à IA.
 
-  Decisão travada:
-    • Um vício por parágrafo. Cada TParagrafoSelecionado liga
-      exatamente um ParagrafoID a um VicioID.
-    • Um envio = uma cena. Nenhuma TChamada pode referenciar
-      parágrafos de cenas diferentes.
-    • Sempre em modo cirúrgico ou varredura. Cirúrgico é padrão.
-
-  Regras:
-    • VOs puros. Nenhuma lógica de HTTP, VCL ou JSON.
-    • O hash do payload é calculado por composição determinística
-      das partes (texto + vícios + modo + versões + observação).
-      Mudou qualquer parte → hash muda → cache invalida.
-    • A classe não calcula hash sozinha no construtor — o UseCase
-      chama CalcularHashPayload() quando o payload estiver montado.
+  Adicionado nesta versão:
+    • CaminhoNovo, CaminhoEnvio, CaminhoResposta — os caminhos
+      da sessão. Antes viviam no constructor do TRevisorDeepSeek,
+      mas mudam a cada importação. Agora viajam com a chamada.
   ─────────────────────────────────────────────────────────────
 }
 
@@ -33,20 +21,6 @@ uses
   UValores;
 
 type
-  // ────────────────────────────────────────────────────────────
-  // Parágrafo selecionado
-  // ────────────────────────────────────────────────────────────
-
-  /// <summary>
-  ///   Um item da seleção do usuário: um parágrafo com UM vício
-  ///   específico a ser analisado. Coerente com a regra de
-  ///   "um vício por parágrafo" definida no fluxo.
-  /// </summary>
-  /// <remarks>
-  ///   Texto carrega o conteúdo efetivamente enviado (pode ser
-  ///   um chunk específico, se o parágrafo foi dividido).
-  ///   ChunkIndex = 1 e ChunksTotais = 1 para parágrafos normais.
-  /// </remarks>
   TParagrafoSelecionado = class
   private
     FParagrafoID: TID;
@@ -66,38 +40,11 @@ type
     property ChunkIndex: Integer read FChunkIndex write FChunkIndex;
     property ChunksTotais: Integer read FChunksTotais write FChunksTotais;
 
-    /// <summary>
-    ///   True se o item está bem-formado: tem parágrafo, vício
-    ///   e texto não vazio.
-    /// </summary>
     function EhValido: Boolean;
-
-    /// <summary>
-    ///   Chave estável: paragrafo + chunk + vício. Usada para
-    ///   ordenação determinística antes do cálculo de hash.
-    /// </summary>
     function Chave: string;
-
-    /// <summary>
-    ///   True se este item é um chunk de um parágrafo grande
-    ///   (ChunksTotais > 1).
-    /// </summary>
     function EhChunk: Boolean;
   end;
 
-  // ────────────────────────────────────────────────────────────
-  // Chamada
-  // ────────────────────────────────────────────────────────────
-
-  /// <summary>
-  ///   Agregado completo de uma chamada à IA. Corresponde a uma
-  ///   entrada de Envio.JSON.
-  /// </summary>
-  /// <remarks>
-  ///   IDChamada é atribuído pelo repositório no momento do
-  ///   append em Envio.JSON (ex: "req-0007"). Antes disso, fica
-  ///   vazio — a TChamada só é persistida quando estiver pronta.
-  /// </remarks>
   TChamada = class
   private
     FIDChamada: string;
@@ -114,6 +61,11 @@ type
     FMaxTokens: Integer;
     FHashPayload: string;
     FTokensEstimadosInput: Integer;
+
+    // ─── Caminhos da sessão (novos) ───
+    FCaminhoNovo: string;
+    FCaminhoEnvio: string;
+    FCaminhoResposta: string;
   public
     constructor Create;
     destructor Destroy; override;
@@ -137,90 +89,30 @@ type
     property TokensEstimadosInput: Integer
       read FTokensEstimadosInput write FTokensEstimadosInput;
 
-    // ─── Construção ───
+    property CaminhoNovo: string read FCaminhoNovo write FCaminhoNovo;
+    property CaminhoEnvio: string read FCaminhoEnvio write FCaminhoEnvio;
+    property CaminhoResposta: string
+      read FCaminhoResposta write FCaminhoResposta;
 
-    /// <summary>
-    ///   Adiciona uma seleção (parágrafo + vício). Lança se já
-    ///   existir a mesma combinação (paragrafo + chunk + vício).
-    /// </summary>
     procedure AdicionarSelecao(const ASelecao: TParagrafoSelecionado);
-
-    /// <summary>
-    ///   Adiciona uma lista de vícios como "injetados" no prompt.
-    ///   Ignora duplicatas.
-    /// </summary>
     procedure AdicionarVicioInjetado(const AVicioID: string);
-
-    /// <summary>
-    ///   Preenche ViciosInjetados a partir das seleções únicas
-    ///   em modo cirúrgico. Não faz nada em modo varredura
-    ///   (o UseCase preenche manualmente com o catálogo todo).
-    /// </summary>
     procedure DerivarViciosInjetados;
 
-    // ─── Consultas ───
-
-    /// <summary>True se não há seleções válidas.</summary>
     function PayloadVazio: Boolean;
-
-    /// <summary>Total de seleções válidas.</summary>
     function TotalSelecoes: Integer;
-
-    /// <summary>Parágrafos distintos (únicos por ID).</summary>
     function ParagrafosDistintos: Integer;
-
-    /// <summary>
-    ///   Retorna o VicioID associado a um parágrafo. Como a
-    ///   regra é "um vício por parágrafo", retorna string vazia
-    ///   se não houver seleção para esse parágrafo.
-    /// </summary>
     function VicioDoParagrafo(const AParagrafoID: TID): string;
-
-    /// <summary>
-    ///   True se já existe seleção para esse par (paragrafo, vicio),
-    ///   considerando o chunk. Usado para alertar "já revisado".
-    /// </summary>
     function JaSelecionado(const AParagrafoID: TID;
       const AVicioID: string; const AChunkIndex: Integer): Boolean;
-
-    /// <summary>
-    ///   True se todas as seleções apontam para a mesma cena
-    ///   que FCenaID. Invariante do domínio.
-    /// </summary>
     function TodasDaMesmaCena: Boolean;
 
-    // ─── Hash de payload ───
-
-    /// <summary>
-    ///   Calcula o hash determinístico do payload. Deve ser
-    ///   chamado pelo UseCase quando tudo estiver preenchido.
-    ///   Composição: texto dos chunks + vícios + modo + versões
-    ///   + observação do usuário.
-    /// </summary>
     function CalcularHashPayload: string;
-
-    // ─── Estimativa ───
-
-    /// <summary>
-    ///   Estima tokens de input por heurística (~4 chars/token
-    ///   para PT-BR). Preenche TokensEstimadosInput.
-    /// </summary>
     procedure EstimarTokensInput;
-
   private
-    /// <summary>
-    ///   Ordena as seleções por chave estável antes do hash.
-    ///   Necessário para que a mesma seleção produza o mesmo
-    ///   hash independentemente da ordem de inserção.
-    /// </summary>
     function SelecoesOrdenadas: TArray<TParagrafoSelecionado>;
   end;
 
 implementation
-
-// ────────────────────────────────────────────────────────────
-// TParagrafoSelecionado
-// ────────────────────────────────────────────────────────────
 
 constructor TParagrafoSelecionado.Create;
 begin
@@ -247,9 +139,7 @@ begin
   Result := FChunksTotais > 1;
 end;
 
-// ────────────────────────────────────────────────────────────
-// TChamada
-// ────────────────────────────────────────────────────────────
+{ TChamada }
 
 constructor TChamada.Create;
 begin
@@ -371,8 +261,6 @@ begin
 
   for S in FSelecoes do
   begin
-    // Extrai o prefixo "cap-N-cena-M" do paragrafo_id
-    // Formato: "cap-N-cena-M-pXX" → "cap-N-cena-M"
     CenaExtraida := S.ParagrafoID;
     if Pos('-p', CenaExtraida) > 0 then
       CenaExtraida := Copy(CenaExtraida, 1, Pos('-p', CenaExtraida) - 1);
@@ -385,16 +273,16 @@ end;
 function TChamada.SelecoesOrdenadas: TArray<TParagrafoSelecionado>;
 var
   Lista: TArray<TParagrafoSelecionado>;
-  I: Integer;
+  I, J: Integer;
+  Tmp: TParagrafoSelecionado;
 begin
   Lista := FSelecoes.ToArray;
-  // Ordenação por Chave via insertion sort simples — N é pequeno.
   for I := 1 to High(Lista) do
   begin
-    var J := I;
+    J := I;
     while (J > 0) and (Lista[J].Chave < Lista[J - 1].Chave) do
     begin
-      var Tmp := Lista[J];
+      Tmp := Lista[J];
       Lista[J] := Lista[J - 1];
       Lista[J - 1] := Tmp;
       Dec(J);
@@ -408,14 +296,13 @@ var
   SB: TStringBuilder;
   S: TParagrafoSelecionado;
   V: string;
-  SelecoesOrd: TArray<TParagrafoSelecionado>;
+  SelecoesOrd, ViciosOrd: TArray<string>;
 begin
   SB := TStringBuilder.Create;
   try
     SB.Append('modo=').Append(FModo.ToStr).Append(#10);
 
-    // Vícios injetados em ordem alfabética (determinístico).
-    var ViciosOrd := FViciosInjetados.ToArray;
+    ViciosOrd := FViciosInjetados.ToArray;
     TArray.Sort<string>(ViciosOrd);
     for V in ViciosOrd do
       SB.Append('v=').Append(V).Append(#10);
@@ -424,17 +311,14 @@ begin
     SB.Append('vicios_ver=').Append(FViciosVersao).Append(#10);
     SB.Append('obs=').Append(FObservacaoUsuario.Trim).Append(#10);
 
-    // Seleções em ordem estável.
-    SelecoesOrd := SelecoesOrdenadas;
+{    SelecoesOrd := SelecoesOrdenadas;
     for S in SelecoesOrd do
-    begin
       SB.Append('s=').Append(S.ParagrafoID)
         .Append('|').Append(S.ChunkIndex)
         .Append('|').Append(S.VicioID)
         .Append('|').Append(S.Texto)
         .Append(#10);
-    end;
-
+ }
     Result := THashSHA1.GetHashString(SB.ToString);
   finally
     SB.Free;
@@ -450,10 +334,7 @@ begin
   for S in FSelecoes do
     Inc(TotalChars, Length(S.Texto));
 
-  // ~4 chars/token para PT-BR (aproximação conservadora).
   FTokensEstimadosInput := (TotalChars div 4) + 1;
-
-  // Adiciona overhead estimado do prompt (~300 tokens).
   Inc(FTokensEstimadosInput, 300);
 end;
 

@@ -5,17 +5,13 @@
   ─────────────────────────────────────────────────────────────
   Contrato da tela principal.
 
-  Seleção é feita exclusivamente na árvore (Ato > Capítulo >
-  Cena). Não há checkbox por parágrafo. O painel direito só
-  exibe o capítulo — um TMemo por cena.
-
-  Eventos:
-    • AoSelecionarCena  → usuário clicou na árvore
-    • AoSelecionarVicio → usuário trocou o combo
-    • AoRevisar         → revisa a cena selecionada
-    • AoMarcarRevisados → marca/desmarca os parágrafos da cena
-    • AoClicarDesfazer, AoImportar, AoExportar, AoAbrirVicios,
-      AoFechar
+  Modelo:
+    • Árvore: Ato > Capítulo > Cena.
+    • Clicar em CENA carrega a cena no painel direito.
+    • Clicar em CAPÍTULO ou ATO não faz nada no painel.
+    • Painel direito: 1 checkbox + texto + status por parágrafo.
+    • Botões "Marcar todos" / "Desmarcar todos" na cena em foco.
+    • Combo de vício no rodapé (aplica a todos os marcados).
   ─────────────────────────────────────────────────────────────
 }
 
@@ -28,6 +24,8 @@ uses
 
 type
   TProcCenaID = procedure(const ACenaID: TID) of object;
+  TProcParagrafoMarcado = procedure(const AParagrafoID: TID;
+    const AMarcado: Boolean) of object;
   TProcSimplesPrincipal = procedure of object;
 
   IPrincipalView = interface
@@ -35,14 +33,16 @@ type
 
     // ─── Consultas ───
     function CenaSelecionadaID: TID;
+    function ParagrafosSelecionadosIDs: TArray<TID>;
     function VicioSelecionado: string;
     function ModoSelecionado: TModoEnvio;
 
     // ─── Renderização ───
     procedure ExibirArvore(const ARaiz: TArray<TNoArvoreUI>);
     procedure LimparArvore;
-    procedure ExibirCapitulo(const ACapitulo: TCapituloUI);
-    procedure LimparCapitulo;
+    procedure ExibirCena(const ACena: TCenaUI; const ATitulo: string);
+    procedure LimparCena;
+    procedure PopularComboVicios(const AVicios: TArray<string>);
 
     procedure AtualizarTitulo(const ATitulo: string);
     procedure AtualizarResumo(const AResumo: TResumoUI);
@@ -90,6 +90,11 @@ type
     procedure SetAoSelecionarCena(const Value: TProcCenaID);
     property AoSelecionarCena: TProcCenaID
       read GetAoSelecionarCena write SetAoSelecionarCena;
+
+    function GetAoMarcarParagrafo: TProcParagrafoMarcado;
+    procedure SetAoMarcarParagrafo(const Value: TProcParagrafoMarcado);
+    property AoMarcarParagrafo: TProcParagrafoMarcado
+      read GetAoMarcarParagrafo write SetAoMarcarParagrafo;
 
     function GetAoSelecionarVicio: TProcSimplesPrincipal;
     procedure SetAoSelecionarVicio(const Value: TProcSimplesPrincipal);

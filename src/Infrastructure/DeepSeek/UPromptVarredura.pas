@@ -5,24 +5,8 @@
   ─────────────────────────────────────────────────────────────
   Construtor de prompt no modo varredura.
 
-  Diferenças em relação ao cirúrgico:
-    • System prompt lista o CATÁLOGO INTEIRO (todos os vícios
-      com ID + dica), não só os marcados.
-    • Instrução explícita para a IA IDENTIFICAR vícios, não
-      apenas aplicar os marcados pelo usuário.
-    • User message traz a cena inteira (todos os parágrafos
-      com seus IDs e sem dica de vício específico).
-    • ViciosInjetados deve vir preenchido com todos os IDs do
-      catálogo — o UseCase faz isso antes de chamar Montar.
-    • Versao = 'v2' — separa o cache do modo cirúrgico.
-
-  Uso típico:
-    • O usuário suspeita que há algo que não viu.
-    • Ou primeira passada em cena nova, sem marcação manual.
-
-  Trade-off esperado:
-    • 4-5x mais caro que o cirúrgico (input maior).
-    • Retorno potencial: descobrir vícios não percebidos.
+  Nesta versão:
+    • Campo "motivo" restrito a "Ok" ou "Corrigido".
   ─────────────────────────────────────────────────────────────
 }
 
@@ -61,14 +45,14 @@ const
 
   FORMATO_RESPOSTA_JSON =
     '{' + sLineBreak +
-    '  "vicio_geral": "resumo do que foi encontrado ou null",' + sLineBreak +
+    '  "vicio_geral": "resumo curto ou null",' + sLineBreak +
     '  "edicoes": [' + sLineBreak +
     '    {' + sLineBreak +
     '      "paragrafo_id": "cap-N-cena-M-pXX",' + sLineBreak +
     '      "chunk_index": 1,' + sLineBreak +
     '      "id_vicio": "id_do_catalogo",' + sLineBreak +
-    '      "sugerido": "parágrafo COMPLETO revisado, não só o trecho alterado",' + sLineBreak +
-    '      "motivo": "explicação curta"' + sLineBreak +
+    '      "sugerido": "parágrafo COMPLETO revisado",' + sLineBreak +
+    '      "motivo": "Ok ou Corrigido"' + sLineBreak +
     '    }' + sLineBreak +
     '  ]' + sLineBreak +
     '}';
@@ -115,9 +99,10 @@ begin
     SB.AppendLine('  pessoal: só aponte o que se encaixa em um vício do catálogo.');
     SB.AppendLine('- Faça edições cirúrgicas: mude só o trecho afetado.');
     SB.AppendLine('- Devolva no campo "sugerido" o PARÁGRAFO INTEIRO revisado,');
-    SB.AppendLine('  não apenas o trecho alterado. O texto que já estava no');
-    SB.AppendLine('  original deve reaparecer no sugerido, com as correções');
-    SB.AppendLine('  aplicadas.');
+    SB.AppendLine('  não apenas o trecho alterado.');
+    SB.AppendLine('- Se NÃO houver correção, use "motivo": "Ok".');
+    SB.AppendLine('- Se houver correção aplicada, use "motivo": "Corrigido".');
+    SB.AppendLine('- NÃO escreva explicações no campo "motivo".');
     SB.AppendLine('- Preserve sentido e tom do original.');
     SB.AppendLine('- Não invente informação nova no texto sugerido.');
     SB.AppendLine('- Se um parágrafo não tiver vício, não o inclua na resposta.');
@@ -150,7 +135,6 @@ begin
   try
     Ordenados := ACatalogo.Categorias.ToArray;
 
-    // Ordena por ID alfabético — determinístico entre execuções.
     TArray.Sort<TVicio>(Ordenados,
       TComparer<TVicio>.Construct(
         function(const A, B: TVicio): Integer
@@ -201,8 +185,6 @@ begin
   try
     for Sel in AChamada.Selecoes do
     begin
-      // No modo varredura não há dica de vício por parágrafo —
-      // o cabeçalho só identifica o alvo da edição.
       SB.Append('[').Append(Sel.ParagrafoID).AppendLine(']');
       SB.AppendLine(Sel.Texto);
       SB.AppendLine;

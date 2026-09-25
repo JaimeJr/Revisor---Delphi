@@ -3,28 +3,19 @@
 {
   UEnvioJsonRepository.pas
   ─────────────────────────────────────────────────────────────
-  Implementação de IEnvioRepository gravando em JSON.
+  Log append-only das chamadas à IA.
 
-  Estratégia: o arquivo inteiro é carregado, a nova entrada é
-  anexada em memória, e o arquivo é regravado. Para o volume
-  esperado (centenas de chamadas por sessão), é aceitável e
-  mantém o arquivo sempre íntegro.
-
-  Decisões:
-    • IDChamada atribuído no Append se ainda não tiver.
-    • Datas em ISO 8601 UTC.
-    • Enums em string minúscula.
-    • Escrita atômica (.tmp + rename).
-    • UTF-8 sem BOM.
-    • Duplicação controlada dos helpers (não compartilhados
-      com Antes/Novo — evolução independente).
+  Correção importante: Append chama Chamadas.Extract(AChamada)
+  antes de liberar a lista, para não destruir a TChamada do
+  chamador (bug de double-free).
   ─────────────────────────────────────────────────────────────
 }
 
 interface
 
 uses
-  UIEnvioRepository, UChamada;
+  UChamada,
+  UIEnvioRepository;
 
 type
   TEnvioJsonRepository = class(TInterfacedObject, IEnvioRepository)
@@ -59,7 +50,7 @@ const
   DIGITOS_ID_CHAMADA = 4;
 
 // ────────────────────────────────────────────────────────────
-// Utilitários internos
+// Utilitários
 // ────────────────────────────────────────────────────────────
 
 function DataHoraParaISO(const AData: TDateTime): string;
@@ -101,12 +92,9 @@ var
   Temp: string;
 begin
   Temp := ACaminho + '.tmp';
-
   TFile.WriteAllText(Temp, AConteudo, TEncoding.UTF8);
-
   if TFile.Exists(ACaminho) then
     TFile.Delete(ACaminho);
-
   TFile.Move(Temp, ACaminho);
 end;
 
@@ -118,7 +106,7 @@ begin
 end;
 
 // ────────────────────────────────────────────────────────────
-// Serialização: ParagrafoSelecionado
+// Serialização
 // ────────────────────────────────────────────────────────────
 
 function SelecaoParaJson(const ASel: TParagrafoSelecionado): TJSONObject;
@@ -142,10 +130,6 @@ begin
   Result.ChunkIndex := AObj.GetValue<Integer>('chunk_index');
   Result.ChunksTotais := AObj.GetValue<Integer>('chunks_totais');
 end;
-
-// ────────────────────────────────────────────────────────────
-// Serialização: Chamada
-// ────────────────────────────────────────────────────────────
 
 function ChamadaParaJson(const AChamada: TChamada): TJSONObject;
 var
@@ -230,7 +214,7 @@ begin
 end;
 
 // ────────────────────────────────────────────────────────────
-// Leitura / escrita do arquivo inteiro
+// Leitura / escrita
 // ────────────────────────────────────────────────────────────
 
 function CarregarTodas(const ACaminho: string): TObjectList<TChamada>;
@@ -351,12 +335,16 @@ begin
 
   Chamadas := CarregarTodas(ACaminho);
   try
-    // Atribui ID se ainda não tiver.
     if AChamada.IDChamada = '' then
       AChamada.IDChamada := ProximoIDChamada(Chamadas);
 
     Chamadas.Add(AChamada);
     GravarTodas(Chamadas, ACaminho);
+
+    // ⚠ Desvincula antes do Free, para não destruir a AChamada
+    // do chamador. Sem isso, Chamadas.Free libera AChamada
+    // junto e o chamador segue com memória morta.
+    Chamadas.Extract(AChamada);
   finally
     Chamadas.Free;
   end;
@@ -372,13 +360,12 @@ begin
   try
     for C in Chamadas do
       if C.IDChamada = AIDChamada then
+      begin
+        Chamadas.Extract(C);
         Exit(C);
+      end;
     Result := nil;
   finally
-    // Não libera C — ele foi retornado. Precisa ser removido
-    // antes do Free para não ser destruído.
-    if Assigned(Result) then
-      Chamadas.Extract(Result);
     Chamadas.Free;
   end;
 end;
@@ -394,20 +381,21 @@ function TEnvioJsonRepository.BuscarPorHash(const AHashPayload,
 var
   Chamadas: TObjectList<TChamada>;
   C: TChamada;
+  I: Integer;
 begin
   Chamadas := CarregarTodas(ACaminho);
   try
-    // Busca de trás para frente: a mais recente ganha.
-    for var I := Chamadas.Count - 1 downto 0 do
+    for I := Chamadas.Count - 1 downto 0 do
     begin
       C := Chamadas[I];
       if C.HashPayload = AHashPayload then
+      begin
+        Chamadas.Extract(C);
         Exit(C);
+      end;
     end;
     Result := nil;
   finally
-    if Assigned(Result) then
-      Chamadas.Extract(Result);
     Chamadas.Free;
   end;
 end;

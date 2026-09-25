@@ -217,7 +217,7 @@ object frmRevisao: TfrmRevisao
         object lblAntigo: TLabel
           Left = 0
           Top = 0
-          Width = 85
+          Width = 376
           Height = 15
           Align = alTop
           Caption = '   Texto original'
@@ -228,6 +228,7 @@ object frmRevisao: TfrmRevisao
           Font.Style = [fsBold]
           ParentFont = False
           Layout = tlCenter
+          ExplicitWidth = 85
         end
         object memAntigo: TMemo
           Left = 0
@@ -255,7 +256,7 @@ object frmRevisao: TfrmRevisao
         object lblNovo: TLabel
           Left = 0
           Top = 0
-          Width = 92
+          Width = 378
           Height = 15
           Align = alTop
           Caption = '   Texto sugerido'
@@ -266,6 +267,7 @@ object frmRevisao: TfrmRevisao
           Font.Style = [fsBold]
           ParentFont = False
           Layout = tlCenter
+          ExplicitWidth = 92
         end
         object memNovo: TMemo
           Left = 0

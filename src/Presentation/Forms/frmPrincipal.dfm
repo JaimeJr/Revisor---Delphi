@@ -137,22 +137,51 @@ object frmPrincipal: TfrmPrincipal
     TabOrder = 2
     ExplicitWidth = 975
     ExplicitHeight = 646
-    object lblTituloCapitulo: TLabel
+    object lblTituloCena: TLabel
       Left = 0
       Top = 0
       Width = 977
-      Height = 28
+      Height = 21
       Align = alTop
       Alignment = taCenter
-      Caption = 'CAP'#205'TULO'
+      Caption = 'Selecione uma cena na '#225'rvore'
       Font.Charset = DEFAULT_CHARSET
       Font.Color = clWindowText
-      Font.Height = -20
+      Font.Height = -16
       Font.Name = 'Segoe UI'
       Font.Style = [fsBold]
       ParentFont = False
       Layout = tlCenter
-      ExplicitWidth = 95
+      ExplicitWidth = 229
+    end
+    object pnlCenaTopo: TPanel
+      Left = 0
+      Top = 21
+      Width = 977
+      Height = 36
+      Align = alTop
+      BevelOuter = bvNone
+      ShowCaption = False
+      TabOrder = 0
+      ExplicitWidth = 975
+      object btnMarcarTodos: TButton
+        Left = 8
+        Top = 4
+        Width = 120
+        Height = 26
+        Caption = 'Marcar todos'
+        TabOrder = 0
+        OnClick = BtnMarcarTodosClick
+      end
+      object btnDesmarcarTodos: TButton
+        Left = 136
+        Top = 4
+        Width = 130
+        Height = 26
+        Caption = 'Desmarcar todos'
+        TabOrder = 1
+        OnClick = BtnDesmarcarTodosClick
+      end
     end
     object pnlRodapeConteudo: TPanel
       Left = 0
@@ -162,16 +191,15 @@ object frmPrincipal: TfrmPrincipal
       Align = alBottom
       BevelOuter = bvNone
       ShowCaption = False
-      TabOrder = 0
+      TabOrder = 1
       ExplicitTop = 606
       ExplicitWidth = 975
       object lblContador: TLabel
-        Left = 833
+        Left = 966
         Top = 11
-        Width = 136
+        Width = 3
         Height = 15
         Alignment = taRightJustify
-        Caption = '0 par'#225'grafo(s) marcado(s)'
         Layout = tlCenter
       end
       object cmbVicio: TComboBox
@@ -184,18 +212,24 @@ object frmPrincipal: TfrmPrincipal
         OnChange = CmbVicioChange
       end
     end
-    object scrollCenas: TScrollBox
+    object scrollParagrafos: TScrollBox
       Left = 0
-      Top = 28
+      Top = 57
       Width = 977
-      Height = 586
+      Height = 557
+      HorzScrollBar.Smooth = True
+      HorzScrollBar.Tracking = True
+      HorzScrollBar.Visible = False
+      VertScrollBar.Smooth = True
+      VertScrollBar.Tracking = True
       Align = alClient
       BevelInner = bvNone
       BevelOuter = bvNone
       BorderStyle = bsNone
-      TabOrder = 1
+      TabOrder = 2
+      OnResize = ScrollParagrafosResize
       ExplicitWidth = 975
-      ExplicitHeight = 578
+      ExplicitHeight = 549
     end
   end
   object statusBar: TStatusBar

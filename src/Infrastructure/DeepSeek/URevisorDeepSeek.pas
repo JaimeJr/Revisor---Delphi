@@ -1,21 +1,33 @@
 ﻿unit URevisorDeepSeek;
 
+{
+  URevisorDeepSeek.pas
+  ─────────────────────────────────────────────────────────────
+  Implementação síncrona de IRevisorIA usando a API DeepSeek.
+
+  Nesta versão:
+    • Não carrega caminhos de Envio/Resposta — eles vêm por
+      AChamada.CaminhoEnvio e AChamada.CaminhoResposta.
+    • Mantém apenas o CaminhoVicios, que é fixo por instalação
+      e necessário para carregar o catálogo ao montar o prompt.
+  ─────────────────────────────────────────────────────────────
+}
+
 interface
+
 uses
   System.SysUtils,
-  System.Generics.Collections,
   System.JSON,
+  System.Classes,
+  System.Generics.Collections,
+  System.Net.HttpClient,
+  System.Net.URLClient,
   UIRevisorIA,
   UChamada,
   UEdicaoSugerida,
   UIConstrutorPrompt,
   UICacheChamadas,
   UIEnvioRepository,
-  System.Classes,
-  System.Net.HttpClient,
-  System.Net.URLClient,
-  UValores,
-  UVicio,
   UIRespostaRepository,
   UIViciosRepository;
 
@@ -30,41 +42,33 @@ type
     FCache: ICacheChamadas;
     FEnvioRepo: IEnvioRepository;
     FRespostaRepo: IRespostaRepository;
-    FCaminhoEnvio: string;
-    FCaminhoResposta: string;
-    FPrecoInputPorMilhao: Double;
-    FPrecoOutputPorMilhao: Double;
     FViciosRepo: IViciosRepository;
     FCaminhoVicios: string;
+    FPrecoInputPorMilhao: Double;
+    FPrecoOutputPorMilhao: Double;
 
     function ConsultarCache(const AHash: string): TResposta;
-
     function ExecutarHttp(const APayload: TPayload): string;
-
     function ParsearResposta(const ARespostaBruta: string;
       const AIDChamada: string): TResposta;
-
     function ExtrairConteudo(const AJsonResposta: TJSONObject): string;
     procedure PreencherUso(const AJsonResposta: TJSONObject;
       const AResposta: TResposta);
     procedure PreencherEdicoes(const AConteudoJson: string;
       const AResposta: TResposta);
-    function ClassificarStatusParse(const AResposta: TResposta): TStatusParse;
-
     procedure AplicarEscopo(const AChamada: TChamada;
       const AResposta: TResposta);
-
     function EstimarCusto(const ATokensIn, ATokensOut: Integer): Double;
-
     procedure ConfigurarHttp(const AHttp: THTTPClient);
   public
-    constructor Create(const AApeKey, AModelo, AEndpoint: string;
+    constructor Create(const AApiKey, AModelo, AEndpoint: string;
       const ATimeoutMs: Integer;
       const APromptFactory: IPromptFactory;
       const ACache: ICacheChamadas;
       const AEnvioRepo: IEnvioRepository;
       const ARespostaRepo: IRespostaRepository;
-      const ACaminhoEnvio, ACaminhoResposta: string;
+      const AViciosRepo: IViciosRepository;
+      const ACaminhoVicios: string;
       const APrecoInputPorMilhao, APrecoOutputPorMilhao: Double);
 
     function Revisar(const AChamada: TChamada): TResposta;
@@ -72,22 +76,21 @@ type
 
 implementation
 
+uses
+  UVicio,
+  UValores;
 
-const
-  PREFIXO_ID_CHAMADA = 'req-';
-
-{ TRevisorDeepSeek }
-
-constructor TRevisorDeepSeek.Create(const AApeKey, AModelo,
+constructor TRevisorDeepSeek.Create(const AApiKey, AModelo,
   AEndpoint: string; const ATimeoutMs: Integer;
   const APromptFactory: IPromptFactory; const ACache: ICacheChamadas;
   const AEnvioRepo: IEnvioRepository; const ARespostaRepo: IRespostaRepository;
-  const ACaminhoEnvio, ACaminhoResposta: string;
+  const AViciosRepo: IViciosRepository;
+  const ACaminhoVicios: string;
   const APrecoInputPorMilhao, APrecoOutputPorMilhao: Double);
 begin
   inherited Create;
 
-  if AApeKey = '' then
+  if AApiKey = '' then
     raise EValorInvalido.Create('ApiKey não pode ser vazia.');
   if not Assigned(APromptFactory) then
     raise EValorInvalido.Create('IPromptFactory não pode ser nil.');
@@ -97,8 +100,12 @@ begin
     raise EValorInvalido.Create('IEnvioRepository não pode ser nil.');
   if not Assigned(ARespostaRepo) then
     raise EValorInvalido.Create('IRespostaRepository não pode ser nil.');
+  if not Assigned(AViciosRepo) then
+    raise EValorInvalido.Create('IViciosRepository não pode ser nil.');
+  if ACaminhoVicios = '' then
+    raise EValorInvalido.Create('CaminhoVicios não pode ser vazio.');
 
-  FApiKey := AApeKey;
+  FApiKey := AApiKey;
   FModelo := AModelo;
   FEndpoint := AEndpoint;
   FTimeoutMs := ATimeoutMs;
@@ -106,8 +113,8 @@ begin
   FCache := ACache;
   FEnvioRepo := AEnvioRepo;
   FRespostaRepo := ARespostaRepo;
-  FCaminhoEnvio := ACaminhoEnvio;
-  FCaminhoResposta := ACaminhoResposta;
+  FViciosRepo := AViciosRepo;
+  FCaminhoVicios := ACaminhoVicios;
   FPrecoInputPorMilhao := APrecoInputPorMilhao;
   FPrecoOutputPorMilhao := APrecoOutputPorMilhao;
 end;
@@ -125,20 +132,25 @@ begin
   if AChamada.PayloadVazio then
     raise EOperacaoInvalida.Create(
       'Chamada sem parágrafos selecionados — nada a revisar.');
+  if AChamada.CaminhoEnvio = '' then
+    raise EOperacaoInvalida.Create(
+      'TChamada.CaminhoEnvio não foi preenchido pelo UseCase.');
+  if AChamada.CaminhoResposta = '' then
+    raise EOperacaoInvalida.Create(
+      'TChamada.CaminhoResposta não foi preenchido pelo UseCase.');
 
-  // 1) Hash do payload
   Hash := AChamada.CalcularHashPayload;
   AChamada.HashPayload := Hash;
 
-  // 2) Cache
   Resposta := ConsultarCache(Hash);
   if Assigned(Resposta) then
     Exit(Resposta);
 
-  // 3) Anexa ao Envio.JSON (atribui IDChamada)
-  FEnvioRepo.Append(AChamada, FCaminhoEnvio);
+  // Persiste a chamada.
+  FEnvioRepo.Append(AChamada, AChamada.CaminhoEnvio);
 
-  // 4) Monta payload
+  // Monta o payload (precisa do catálogo para injetar dicas).
+  Catalogo := FViciosRepo.Carregar(FCaminhoVicios);
   try
     Payload := FPromptFactory.ParaModo(AChamada.Modo)
       .Montar(AChamada, Catalogo);
@@ -146,7 +158,7 @@ begin
     Catalogo.Free;
   end;
 
-  // 5) HTTP
+  // Executa HTTP. Falha de rede vira TResposta com parse_error.
   try
     RespostaBruta := ExecutarHttp(Payload);
   except
@@ -156,25 +168,18 @@ begin
       Resposta.IDChamada := AChamada.IDChamada;
       Resposta.StatusParse := spParseError;
       Resposta.ErroParse := 'Falha de rede: ' + E.Message;
-      FRespostaRepo.Append(Resposta, FCaminhoResposta);
+      FRespostaRepo.Append(Resposta, AChamada.CaminhoResposta);
       Exit(Resposta);
     end;
   end;
 
-  // 6) Parse
   Resposta := ParsearResposta(RespostaBruta, AChamada.IDChamada);
-
-  // 7) Escopo (parágrafos e vícios permitidos)
   AplicarEscopo(AChamada, Resposta);
   Resposta.ReclassificarStatus;
 
-  // 8) Anexa ao Resposta.JSON
-  FRespostaRepo.Append(Resposta, FCaminhoResposta);
-
-  // 9) Cache
+  FRespostaRepo.Append(Resposta, AChamada.CaminhoResposta);
   FCache.Guardar(Hash, Resposta);
 
-  // 10) Devolve cópia — o cache guarda uma, o chamador recebe outra.
   Result := Resposta.Clonar;
   Resposta.Free;
 end;
@@ -194,15 +199,13 @@ var
   Resposta: IHTTPResponse;
   JsonBody: TJSONObject;
   Mensagens: TJSONArray;
-  MsgSystem, MsgUser: TJSONObject;
-  ResponseFormat: TJSONObject;
+  MsgSystem, MsgUser, ResponseFormat: TJSONObject;
   JsonTexto: string;
 begin
   Http := THTTPClient.Create;
   try
     ConfigurarHttp(Http);
 
-    // ─── Monta o corpo JSON ───
     JsonBody := TJSONObject.Create;
     Corpo := TStringStream.Create('', TEncoding.UTF8);
     try
@@ -236,19 +239,12 @@ begin
       JsonBody.Free;
     end;
 
-    // ─── Envia ───
     Resposta := Http.Post(FEndpoint, Corpo);
     Result := Resposta.ContentAsString(TEncoding.UTF8);
   finally
     Corpo.Free;
     Http.Free;
   end;
-end;
-
-function TRevisorDeepSeek.ClassificarStatusParse(
-  const AResposta: TResposta): TStatusParse;
-begin
-
 end;
 
 procedure TRevisorDeepSeek.ConfigurarHttp(const AHttp: THTTPClient);
@@ -270,7 +266,6 @@ begin
   Result.IDChamada := AIDChamada;
   Result.RespostaBruta := ARespostaBruta;
 
-  // ─── 1. A resposta bruta é JSON? ───
   Json := TJSONObject.ParseJSONValue(ARespostaBruta);
   if not Assigned(Json) then
   begin
@@ -280,7 +275,6 @@ begin
   end;
 
   try
-    // ─── 2. Extrai conteúdo e uso ───
     try
       Conteudo := ExtrairConteudo(Json as TJSONObject);
       PreencherUso(Json as TJSONObject, Result);
@@ -294,7 +288,6 @@ begin
       end;
     end;
 
-    // ─── 3. O conteúdo é JSON no formato esperado? ───
     PreencherEdicoes(Conteudo, Result);
   finally
     Json.Free;
@@ -305,8 +298,7 @@ function TRevisorDeepSeek.ExtrairConteudo(
   const AJsonResposta: TJSONObject): string;
 var
   Choices: TJSONArray;
-  Choice: TJSONObject;
-  Message: TJSONObject;
+  Choice, Message: TJSONObject;
 begin
   Choices := AJsonResposta.GetValue<TJSONArray>('choices');
   if Choices.Count = 0 then
@@ -360,11 +352,9 @@ begin
 
     Raiz := Json as TJSONObject;
 
-    // Vicio geral (pode vir null)
     if Raiz.TryGetValue<string>('vicio_geral', VicioGeral) then
       AResposta.VicioGeral := VicioGeral;
 
-    // Lista de edições
     if not Raiz.TryGetValue<TJSONArray>('edicoes', Arranjo) then
     begin
       AResposta.StatusParse := spParseError;
@@ -389,7 +379,7 @@ begin
       end;
     end;
 
-    AResposta.StatusParse := spOK;  // será reclassificado por ReclassificarStatus
+    AResposta.StatusParse := spOK;
   finally
     Json.Free;
   end;

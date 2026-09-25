@@ -1,4 +1,26 @@
 ﻿unit frmPrincipal;
+
+{
+  frmPrincipal.pas
+  ─────────────────────────────────────────────────────────────
+  Tela principal — Layout D simplificado.
+
+  Painel direito mostra UMA cena por vez:
+    • Título "Cap. N — Cena M"
+    • Botões "Marcar todos" / "Desmarcar todos"
+    • Lista de parágrafos com checkbox, ID, texto e status.
+
+  Scroll:
+    • Os painéis de parágrafo são posicionados MANUALMENTE
+      (Top acumulado + Width calculada), sem Align.
+    • Controles com Align dentro de TScrollBox impedem o
+      Windows de calcular a área rolável — daí o posicionamento
+      manual.
+    • O handler ScrollParagrafosResize redistribui os painéis
+      quando a largura do scrollbox muda.
+  ─────────────────────────────────────────────────────────────
+}
+
 interface
 
 uses
@@ -19,8 +41,21 @@ uses
   UValores;
 
 type
+  TfrmPrincipal = class;
+
+  TPainelParagrafoUI = class
+  public
+    ParagrafoID: TID;
+    Panel: TPanel;
+    CheckBox: TCheckBox;
+    LabelID: TLabel;
+    LabelTexto: TLabel;
+    LabelStatus: TLabel;
+    Owner: TfrmPrincipal;
+    procedure CheckBoxClick(Sender: TObject);
+  end;
+
   TfrmPrincipal = class(TForm, IPrincipalView)
-    // Toolbar
     pnlTop: TPanel;
     btnImportar: TButton;
     btnExportar: TButton;
@@ -31,23 +66,22 @@ type
     btnStatusAPI: TButton;
     lblStatusAPI: TLabel;
 
-    // Área esquerda
     pnlArvore: TPanel;
     treeEstrutura: TTreeView;
     splitterPrincipal: TSplitter;
 
-    // Área direita
     pnlConteudo: TPanel;
-    lblTituloCapitulo: TLabel;
-    scrollCenas: TScrollBox;
+    lblTituloCena: TLabel;
+    pnlCenaTopo: TPanel;
+    btnMarcarTodos: TButton;
+    btnDesmarcarTodos: TButton;
+    scrollParagrafos: TScrollBox;
     pnlRodapeConteudo: TPanel;
     cmbVicio: TComboBox;
     lblContador: TLabel;
 
-    // Status bar
     statusBar: TStatusBar;
 
-    // Diálogos
     dlgAbrirDocx: TOpenDialog;
     dlgSalvarDocx: TSaveDialog;
 
@@ -60,47 +94,57 @@ type
     procedure BtnMarcarRevisadosClick(Sender: TObject);
     procedure BtnDesfazerClick(Sender: TObject);
     procedure BtnStatusAPIClick(Sender: TObject);
+    procedure BtnMarcarTodosClick(Sender: TObject);
+    procedure BtnDesmarcarTodosClick(Sender: TObject);
     procedure TreeEstruturaChange(Sender: TObject; Node: TTreeNode);
     procedure CmbVicioChange(Sender: TObject);
+    procedure ScrollParagrafosResize(Sender: TObject);
   private
-    FCenaSelecionada: TID;
+    FCenaAtual: TID;
+    FParagrafos: TObjectList<TPainelParagrafoUI>;
+    FTopAcumulado: Integer;
 
     FAoImportar: TProcSimplesPrincipal;
     FAoExportar: TProcSimplesPrincipal;
     FAoAbrirVicios: TProcSimplesPrincipal;
     FAoSelecionarCena: TProcCenaID;
+    FAoMarcarParagrafo: TProcParagrafoMarcado;
     FAoSelecionarVicio: TProcSimplesPrincipal;
     FAoRevisar: TProcSimplesPrincipal;
     FAoMarcarRevisados: TProcSimplesPrincipal;
     FAoClicarDesfazer: TProcSimplesPrincipal;
     FAoFechar: TProcSimplesPrincipal;
 
-    procedure LimparPainelCapitulo;
+    procedure LimparParagrafos;
+    function CorDoStatus(const AStatus: TStatusParagrafo): TColor;
+    function TextoDoStatus(const AStatus: TStatusParagrafo): string;
     procedure PreencherArvoreRecursivo(const AParent: TTreeNode;
       const ANos: TArray<TNoArvoreUI>);
+    procedure ConstruirParagrafo(const APar: TParagrafoUI);
+    procedure ReposicionarPainel(const AWrap: TPainelParagrafoUI);
+    procedure ReposicionarTodos;
+    procedure OnParagrafoCheckBox(const AParagrafoID: TID;
+      const AMarcado: Boolean);
+    procedure AtualizarContador;
+    procedure AplicarMarcacaoEmTodos(const AMarcado: Boolean);
     procedure DefinirStatusAPI(const AOnline: Boolean;
       const AMotivo: string);
-    procedure AtualizarContador;
+    function MedirAlturaTexto(const ATexto: string; const ALargura: Integer;
+      const AFont: TFont): Integer;
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
 
-    // ════════════════════════════════════════════════════════
-    //  IPrincipalView — consultas
-    // ════════════════════════════════════════════════════════
-
     function CenaSelecionadaID: TID;
+    function ParagrafosSelecionadosIDs: TArray<TID>;
     function VicioSelecionado: string;
     function ModoSelecionado: TModoEnvio;
 
-    // ════════════════════════════════════════════════════════
-    //  IPrincipalView — renderização
-    // ════════════════════════════════════════════════════════
-
     procedure ExibirArvore(const ARaiz: TArray<TNoArvoreUI>);
     procedure LimparArvore;
-    procedure ExibirCapitulo(const ACapitulo: TCapituloUI);
-    procedure LimparCapitulo;
+    procedure ExibirCena(const ACena: TCenaUI; const ATitulo: string);
+    procedure LimparCena;
+    procedure PopularComboVicios(const AVicios: TArray<string>);
 
     procedure AtualizarTitulo(const ATitulo: string);
     procedure AtualizarResumo(const AResumo: TResumoUI);
@@ -115,10 +159,6 @@ type
     procedure HabilitarDesfazer(const AHabilitado: Boolean;
       const ADescricao: string);
 
-    // ════════════════════════════════════════════════════════
-    //  IPrincipalView — diálogos e ciclo de vida
-    // ════════════════════════════════════════════════════════
-
     function PerguntarCaminhoDocx: string;
     function PerguntarCaminhoSaidaDocx(const ASugestao: string): string;
     procedure ExibirErro(const AMensagem: string);
@@ -129,10 +169,6 @@ type
     procedure MostrarProgresso(const AMensagem: string);
     procedure OcultarProgresso;
     procedure FecharAplicacao;
-
-    // ════════════════════════════════════════════════════════
-    //  IPrincipalView — eventos
-    // ════════════════════════════════════════════════════════
 
     function GetAoImportar: TProcSimplesPrincipal;
     procedure SetAoImportar(const Value: TProcSimplesPrincipal);
@@ -153,6 +189,11 @@ type
     procedure SetAoSelecionarCena(const Value: TProcCenaID);
     property AoSelecionarCena: TProcCenaID
       read GetAoSelecionarCena write SetAoSelecionarCena;
+
+    function GetAoMarcarParagrafo: TProcParagrafoMarcado;
+    procedure SetAoMarcarParagrafo(const Value: TProcParagrafoMarcado);
+    property AoMarcarParagrafo: TProcParagrafoMarcado
+      read GetAoMarcarParagrafo write SetAoMarcarParagrafo;
 
     function GetAoSelecionarVicio: TProcSimplesPrincipal;
     procedure SetAoSelecionarVicio(const Value: TProcSimplesPrincipal);
@@ -179,7 +220,6 @@ type
     property AoFechar: TProcSimplesPrincipal
       read GetAoFechar write SetAoFechar;
 
-    // ─── Suporte a interface (sem ref counting) ───
     function QueryInterface(const IID: TGUID; out Obj): HResult; stdcall;
     function _AddRef: Integer; stdcall;
     function _Release: Integer; stdcall;
@@ -198,26 +238,45 @@ uses
   UConfigApp;
 
 const
-  ALTURA_CABECALHO_CENA = 26;
-  ALTURA_MEMO_CENA = 180;
+  COR_PENDENTE        = clWindowText;
+  COR_ACEITO          = $00228B22;
+  COR_RECUSADO        = clGray;
+  COR_REVISADO_MANUAL = $00A06020;
+  COR_EDITADO_MANUAL  = $00A05000;
+
+  MARGEM_ESQUERDA = 8;
+  MARGEM_DIREITA = 20;   // espaço para a scrollbar vertical
+  MARGEM_VERTICAL = 4;
+  ALTURA_MINIMA = 32;
+
+{ TPainelParagrafoUI }
+
+procedure TPainelParagrafoUI.CheckBoxClick(Sender: TObject);
+begin
+  if Assigned(Owner) then
+    Owner.OnParagrafoCheckBox(ParagrafoID, CheckBox.Checked);
+end;
 
 { TfrmPrincipal }
 
 constructor TfrmPrincipal.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
+  FParagrafos := TObjectList<TPainelParagrafoUI>.Create;
 end;
 
 destructor TfrmPrincipal.Destroy;
 begin
+  FParagrafos.Free;
   inherited;
 end;
 
 procedure TfrmPrincipal.FormCreate(Sender: TObject);
 begin
-  FCenaSelecionada := '';
+  FCenaAtual := '';
+  FTopAcumulado := 0;
   LimparArvore;
-  LimparCapitulo;
+  LimparCena;
   HabilitarRevisar(False);
   HabilitarExportar(False);
   HabilitarMarcarRevisados(False);
@@ -238,44 +297,32 @@ begin
 end;
 
 // ────────────────────────────────────────────────────────────
-// Handlers dos botões
+// Handlers
 // ────────────────────────────────────────────────────────────
 
 procedure TfrmPrincipal.BtnImportarClick(Sender: TObject);
-begin
-  if Assigned(FAoImportar) then
-    FAoImportar();
-end;
+begin if Assigned(FAoImportar) then FAoImportar(); end;
 
 procedure TfrmPrincipal.BtnExportarClick(Sender: TObject);
-begin
-  if Assigned(FAoExportar) then
-    FAoExportar();
-end;
+begin if Assigned(FAoExportar) then FAoExportar(); end;
 
 procedure TfrmPrincipal.BtnViciosClick(Sender: TObject);
-begin
-  if Assigned(FAoAbrirVicios) then
-    FAoAbrirVicios();
-end;
+begin if Assigned(FAoAbrirVicios) then FAoAbrirVicios(); end;
 
 procedure TfrmPrincipal.BtnRevisarClick(Sender: TObject);
-begin
-  if Assigned(FAoRevisar) then
-    FAoRevisar();
-end;
+begin if Assigned(FAoRevisar) then FAoRevisar(); end;
 
 procedure TfrmPrincipal.BtnMarcarRevisadosClick(Sender: TObject);
-begin
-  if Assigned(FAoMarcarRevisados) then
-    FAoMarcarRevisados();
-end;
+begin if Assigned(FAoMarcarRevisados) then FAoMarcarRevisados(); end;
 
 procedure TfrmPrincipal.BtnDesfazerClick(Sender: TObject);
-begin
-  if Assigned(FAoClicarDesfazer) then
-    FAoClicarDesfazer();
-end;
+begin if Assigned(FAoClicarDesfazer) then FAoClicarDesfazer(); end;
+
+procedure TfrmPrincipal.BtnMarcarTodosClick(Sender: TObject);
+begin AplicarMarcacaoEmTodos(True); end;
+
+procedure TfrmPrincipal.BtnDesmarcarTodosClick(Sender: TObject);
+begin AplicarMarcacaoEmTodos(False); end;
 
 procedure TfrmPrincipal.TreeEstruturaChange(Sender: TObject;
   Node: TTreeNode);
@@ -284,12 +331,12 @@ var
 begin
   if Node = nil then
     Exit;
+  if Node.Level <> 2 then
+    Exit;
 
   ID := TID(Node.Data);
   if ID = '' then
     Exit;
-  if Node.Level = 0 then
-    Exit;  // Ato é só agrupador visual
 
   if Assigned(FAoSelecionarCena) then
     FAoSelecionarCena(ID);
@@ -301,13 +348,73 @@ begin
     FAoSelecionarVicio();
 end;
 
+procedure TfrmPrincipal.ScrollParagrafosResize(Sender: TObject);
+begin
+  // Quando a largura do scrollbox muda (redimensionamento da
+  // janela), redistribui os painéis.
+  ReposicionarTodos;
+end;
+
+// ────────────────────────────────────────────────────────────
+// Marcação
+// ────────────────────────────────────────────────────────────
+
+procedure TfrmPrincipal.AplicarMarcacaoEmTodos(const AMarcado: Boolean);
+var
+  Par: TPainelParagrafoUI;
+begin
+  for Par in FParagrafos do
+    Par.CheckBox.Checked := AMarcado;
+
+  AtualizarContador;
+
+  if Assigned(FAoMarcarParagrafo) and (FParagrafos.Count > 0) then
+    FAoMarcarParagrafo('', AMarcado);
+end;
+
+procedure TfrmPrincipal.OnParagrafoCheckBox(const AParagrafoID: TID;
+  const AMarcado: Boolean);
+begin
+  AtualizarContador;
+  if Assigned(FAoMarcarParagrafo) then
+    FAoMarcarParagrafo(AParagrafoID, AMarcado);
+end;
+
+procedure TfrmPrincipal.AtualizarContador;
+var
+  Marcados: Integer;
+begin
+  Marcados := Length(ParagrafosSelecionadosIDs);
+  if FParagrafos.Count = 0 then
+    lblContador.Caption := ''
+  else
+    lblContador.Caption := Format('%d de %d marcado(s)',
+      [Marcados, FParagrafos.Count]);
+end;
+
 // ────────────────────────────────────────────────────────────
 // IPrincipalView — consultas
 // ────────────────────────────────────────────────────────────
 
 function TfrmPrincipal.CenaSelecionadaID: TID;
 begin
-  Result := FCenaSelecionada;
+  Result := FCenaAtual;
+end;
+
+function TfrmPrincipal.ParagrafosSelecionadosIDs: TArray<TID>;
+var
+  Lista: TList<TID>;
+  Par: TPainelParagrafoUI;
+begin
+  Lista := TList<TID>.Create;
+  try
+    for Par in FParagrafos do
+      if Par.CheckBox.Checked then
+        Lista.Add(Par.ParagrafoID);
+    Result := Lista.ToArray;
+  finally
+    Lista.Free;
+  end;
 end;
 
 function TfrmPrincipal.VicioSelecionado: string;
@@ -323,13 +430,13 @@ begin
 end;
 
 // ────────────────────────────────────────────────────────────
-// IPrincipalView — árvore
+// Árvore
 // ────────────────────────────────────────────────────────────
 
 procedure TfrmPrincipal.LimparArvore;
 begin
   treeEstrutura.Items.Clear;
-  FCenaSelecionada := '';
+  FCenaAtual := '';
 end;
 
 procedure TfrmPrincipal.PreencherArvoreRecursivo(const AParent: TTreeNode;
@@ -359,109 +466,261 @@ begin
 end;
 
 // ────────────────────────────────────────────────────────────
-// IPrincipalView — capítulo
+// Cena
 // ────────────────────────────────────────────────────────────
 
-procedure TfrmPrincipal.LimparPainelCapitulo;
+procedure TfrmPrincipal.LimparParagrafos;
 begin
-  // Painéis e memos são filhos de scrollCenas. Liberar o pai
-  // libera todos em cascata.
-  while scrollCenas.ControlCount > 0 do
-    scrollCenas.Controls[0].Free;
+  FParagrafos.Clear;
+  while scrollParagrafos.ControlCount > 0 do
+    scrollParagrafos.Controls[0].Free;
+
+  FTopAcumulado := 0;
+  scrollParagrafos.VertScrollBar.Position := 0;
 end;
 
-procedure TfrmPrincipal.LimparCapitulo;
+procedure TfrmPrincipal.LimparCena;
 begin
-  LimparPainelCapitulo;
-  lblTituloCapitulo.Caption := '';
+  LimparParagrafos;
+  FCenaAtual := '';
+  lblTituloCena.Caption := '';
   lblContador.Caption := '';
 end;
 
-procedure TfrmPrincipal.ExibirCapitulo(const ACapitulo: TCapituloUI);
+function TfrmPrincipal.MedirAlturaTexto(const ATexto: string;
+  const ALargura: Integer; const AFont: TFont): Integer;
 var
-  Cena: TCenaUI;
-  Par: TParagrafoUI;
-  PnlCena: TPanel;
-  LblCena: TLabel;
-  Mem: TMemo;
-  SB: TStringBuilder;
+  R: TRect;
+  Bmp: TBitmap;
 begin
-  scrollCenas.DisableAlign;
+  Bmp := TBitmap.Create;
   try
-    LimparPainelCapitulo;
-
-    lblTituloCapitulo.Caption :=
-      Format('CAPÍTULO %d — %s', [ACapitulo.Numero, ACapitulo.Titulo]);
-
-    for Cena in ACapitulo.Cenas do
-    begin
-      // ─── Painel da cena ───
-      PnlCena := TPanel.Create(scrollCenas);
-      PnlCena.Parent := scrollCenas;
-      PnlCena.Align := alTop;
-      PnlCena.BevelOuter := bvNone;
-      PnlCena.ShowCaption := False;
-      PnlCena.AlignWithMargins := True;
-      PnlCena.Margins.Top := 8;
-      PnlCena.Margins.Bottom := 4;
-      PnlCena.Margins.Left := 8;
-      PnlCena.Margins.Right := 8;
-      PnlCena.Height := ALTURA_CABECALHO_CENA + ALTURA_MEMO_CENA;
-
-      // ─── Cabeçalho ───
-      LblCena := TLabel.Create(PnlCena);
-      LblCena.Parent := PnlCena;
-      LblCena.Align := alTop;
-      LblCena.Height := ALTURA_CABECALHO_CENA;
-      LblCena.Caption := Format('  Cena %d.%d',
-        [ACapitulo.Numero, Cena.Numero]);
-      LblCena.Font.Style := [fsBold];
-      LblCena.Font.Size := 11;
-      LblCena.Layout := tlCenter;
-
-      // ─── Texto da cena (todos os parágrafos) ───
-      SB := TStringBuilder.Create;
-      try
-        for Par in Cena.Paragrafos do
-        begin
-          if SB.Length > 0 then
-            SB.AppendLine;  // linha em branco entre parágrafos
-          SB.Append(Par.Texto);
-          SB.AppendLine;
-        end;
-
-        Mem := TMemo.Create(PnlCena);
-        Mem.Parent := PnlCena;
-        Mem.Align := alClient;
-        Mem.ReadOnly := True;
-        Mem.BorderStyle := bsNone;
-        Mem.ScrollBars := ssVertical;
-        Mem.WordWrap := True;
-        Mem.Font.Name := 'Segoe UI';
-        Mem.Font.Size := 11;
-        Mem.Text := SB.ToString;
-        Mem.Color := clWindow;
-      finally
-        SB.Free;
-      end;
-    end;
+    Bmp.Canvas.Font.Assign(AFont);
+    R := Rect(0, 0, ALargura, 0);
+    DrawText(Bmp.Canvas.Handle, PChar(ATexto), Length(ATexto), R,
+      DT_CALCRECT or DT_WORDBREAK or DT_NOPREFIX);
+    Result := R.Height;
   finally
-    scrollCenas.EnableAlign;
+    Bmp.Free;
+  end;
+end;
+
+procedure TfrmPrincipal.ConstruirParagrafo(const APar: TParagrafoUI);
+var
+  Pnl: TPanel;
+  Chk: TCheckBox;
+  LblID: TLabel;
+  LblTexto: TLabel;
+  LblStatus: TLabel;
+  Wrap: TPainelParagrafoUI;
+  LarguraTexto, AlturaTexto: Integer;
+begin
+  // ─── Painel da linha — posicionamento manual ───
+  // Sem Align: o TScrollBox nativo do Windows precisa ver o
+  // bounding box real dos filhos para habilitar o scroll.
+  Pnl := TPanel.Create(scrollParagrafos);
+  Pnl.Parent := scrollParagrafos;
+  Pnl.BevelOuter := bvNone;
+  Pnl.ShowCaption := False;
+  Pnl.Left := MARGEM_ESQUERDA;
+  Pnl.Width := scrollParagrafos.ClientWidth - MARGEM_ESQUERDA - MARGEM_DIREITA;
+  if Pnl.Width < 200 then
+    Pnl.Width := 200;
+
+  // ─── Checkbox ───
+  Chk := TCheckBox.Create(Pnl);
+  Chk.Parent := Pnl;
+  Chk.Left := 0;
+  Chk.Top := 2;
+  Chk.Width := 24;
+  Chk.Height := 20;
+  Chk.Caption := '';
+  Chk.Checked := False;
+
+  // ─── ID ───
+  LblID := TLabel.Create(Pnl);
+  LblID.Parent := Pnl;
+  LblID.Left := Chk.Left + Chk.Width;
+  LblID.Top := 2;
+  LblID.Width := 52;
+  LblID.Height := 20;
+  LblID.Caption := APar.ParagrafoID;
+  LblID.Font.Assign(Self.Font);
+  LblID.Font.Style := [fsBold];
+
+  // ─── Status à direita ───
+  LblStatus := TLabel.Create(Pnl);
+  LblStatus.Parent := Pnl;
+  LblStatus.Width := 90;
+  LblStatus.Height := 20;
+  LblStatus.Left := Pnl.Width - LblStatus.Width - 4;
+  LblStatus.Top := 2;
+  LblStatus.Alignment := taRightJustify;
+  LblStatus.Caption := TextoDoStatus(APar.Status);
+  LblStatus.Font.Assign(Self.Font);
+  LblStatus.Font.Color := CorDoStatus(APar.Status);
+  LblStatus.Font.Style := [fsItalic];
+
+  // ─── Texto do parágrafo ───
+  LarguraTexto := LblStatus.Left - (LblID.Left + LblID.Width) - 8;
+  if LarguraTexto < 100 then
+    LarguraTexto := 100;
+
+  AlturaTexto := MedirAlturaTexto(APar.Texto, LarguraTexto, Self.Font);
+  if AlturaTexto < 20 then
+    AlturaTexto := 20;
+
+  LblTexto := TLabel.Create(Pnl);
+  LblTexto.Parent := Pnl;
+  LblTexto.Left := LblID.Left + LblID.Width;
+  LblTexto.Top := 2;
+  LblTexto.Width := LarguraTexto;
+  LblTexto.Height := AlturaTexto;
+  LblTexto.AutoSize := False;
+  LblTexto.WordWrap := True;
+  lblTexto.Margins.Left := 10;
+  LblTexto.Caption := APar.Texto;
+  LblTexto.Font.Assign(Self.Font);
+  LblTexto.Font.Color := CorDoStatus(APar.Status);
+
+  // Altura do painel: o maior entre o texto e o status.
+  Pnl.Height := AlturaTexto + 8;
+  if Pnl.Height < ALTURA_MINIMA then
+    Pnl.Height := ALTURA_MINIMA;
+
+  // ─── Wrapper ───
+  Wrap := TPainelParagrafoUI.Create;
+  Wrap.ParagrafoID := APar.ParagrafoID;
+  Wrap.Panel := Pnl;
+  Wrap.CheckBox := Chk;
+  Wrap.LabelID := LblID;
+  Wrap.LabelTexto := LblTexto;
+  Wrap.LabelStatus := LblStatus;
+  Wrap.Owner := Self;
+  Chk.OnClick := Wrap.CheckBoxClick;
+
+  FParagrafos.Add(Wrap);
+
+  ReposicionarPainel(Wrap);
+end;
+
+procedure TfrmPrincipal.ReposicionarPainel(const AWrap: TPainelParagrafoUI);
+begin
+  AWrap.Panel.Top := FTopAcumulado;
+  Inc(FTopAcumulado, AWrap.Panel.Height + MARGEM_VERTICAL);
+end;
+
+procedure TfrmPrincipal.ReposicionarTodos;
+var
+  Par: TPainelParagrafoUI;
+  NovaCena: TID;
+begin
+  // Recalcula Top de todos os painéis quando a largura muda.
+  // Também re-mede altura dos labels (a quebra de linha muda).
+  NovaCena := FCenaAtual;
+  if NovaCena = '' then
+    Exit;
+
+  FTopAcumulado := 0;
+  for Par in FParagrafos do
+  begin
+    Par.Panel.Width := scrollParagrafos.ClientWidth
+      - MARGEM_ESQUERDA - MARGEM_DIREITA;
+    if Par.Panel.Width < 200 then
+      Par.Panel.Width := 200;
+
+    Par.LabelStatus.Left := Par.Panel.Width - Par.LabelStatus.Width - 4;
+
+    var LarguraTexto := Par.LabelStatus.Left
+      - (Par.LabelID.Left + Par.LabelID.Width) - 8;
+    if LarguraTexto < 100 then
+      LarguraTexto := 100;
+
+    Par.LabelTexto.Width := LarguraTexto;
+    Par.LabelTexto.Height := MedirAlturaTexto(
+      Par.LabelTexto.Caption, LarguraTexto, Self.Font);
+
+    Par.Panel.Height := Par.LabelTexto.Height + 8;
+    if Par.Panel.Height < ALTURA_MINIMA then
+      Par.Panel.Height := ALTURA_MINIMA;
+
+    ReposicionarPainel(Par);
+  end;
+end;
+
+procedure TfrmPrincipal.ExibirCena(const ACena: TCenaUI;
+  const ATitulo: string);
+var
+  Par: TParagrafoUI;
+begin
+  scrollParagrafos.DisableAlign;
+  try
+    LimparParagrafos;
+
+    FCenaAtual := ACena.CenaID;
+    lblTituloCena.Caption := ATitulo;
+
+    for Par in ACena.Paragrafos do
+      ConstruirParagrafo(Par);
+  finally
+    scrollParagrafos.EnableAlign;
   end;
 
   AtualizarContador;
 end;
 
-procedure TfrmPrincipal.AtualizarContador;
+procedure TfrmPrincipal.PopularComboVicios(const AVicios: TArray<string>);
+var
+  V: string;
 begin
-  if FCenaSelecionada = '' then
-    lblContador.Caption := ''
-  else
-    lblContador.Caption := 'Cena selecionada: ' + FCenaSelecionada;
+  cmbVicio.Items.BeginUpdate;
+  try
+    cmbVicio.Items.Clear;
+    for V in AVicios do
+      cmbVicio.Items.Add(V);
+    if cmbVicio.Items.Count > 0 then
+      cmbVicio.ItemIndex := 0;
+  finally
+    cmbVicio.Items.EndUpdate;
+  end;
+
+  if Assigned(FAoSelecionarVicio) then
+    FAoSelecionarVicio();
 end;
 
 // ────────────────────────────────────────────────────────────
-// IPrincipalView — atualizações simples
+// Cores e status
+// ────────────────────────────────────────────────────────────
+
+function TfrmPrincipal.CorDoStatus(const AStatus: TStatusParagrafo): TColor;
+begin
+  case AStatus of
+    spPendente:       Result := COR_PENDENTE;
+    spAceito:         Result := COR_ACEITO;
+    spRecusado:       Result := COR_RECUSADO;
+    spRevisadoManual: Result := COR_REVISADO_MANUAL;
+    spEditadoManual:  Result := COR_EDITADO_MANUAL;
+  else
+    Result := COR_PENDENTE;
+  end;
+end;
+
+function TfrmPrincipal.TextoDoStatus(
+  const AStatus: TStatusParagrafo): string;
+begin
+  case AStatus of
+    spPendente:       Result := '';
+    spAceito:         Result := '✓ aceito';
+    spRecusado:       Result := '✗ recusado';
+    spRevisadoManual: Result := '⊘ revisado';
+    spEditadoManual:  Result := '✎ editado';
+  else
+    Result := '';
+  end;
+end;
+
+// ────────────────────────────────────────────────────────────
+// Atualizações simples
 // ────────────────────────────────────────────────────────────
 
 procedure TfrmPrincipal.AtualizarTitulo(const ATitulo: string);
@@ -485,33 +744,23 @@ begin
 end;
 
 // ────────────────────────────────────────────────────────────
-// IPrincipalView — habilitar / desabilitar
+// Habilitar / desabilitar
 // ────────────────────────────────────────────────────────────
 
 procedure TfrmPrincipal.HabilitarImportar(const AHabilitado: Boolean);
-begin
-  btnImportar.Enabled := AHabilitado;
-end;
+begin btnImportar.Enabled := AHabilitado; end;
 
 procedure TfrmPrincipal.HabilitarRevisar(const AHabilitado: Boolean);
-begin
-  btnRevisar.Enabled := AHabilitado;
-end;
+begin btnRevisar.Enabled := AHabilitado; end;
 
 procedure TfrmPrincipal.HabilitarVarredura(const AHabilitado: Boolean);
-begin
-  // v2
-end;
+begin end;
 
 procedure TfrmPrincipal.HabilitarExportar(const AHabilitado: Boolean);
-begin
-  btnExportar.Enabled := AHabilitado;
-end;
+begin btnExportar.Enabled := AHabilitado; end;
 
 procedure TfrmPrincipal.HabilitarMarcarRevisados(const AHabilitado: Boolean);
-begin
-  btnMarcarRevisados.Enabled := AHabilitado;
-end;
+begin btnMarcarRevisados.Enabled := AHabilitado; end;
 
 procedure TfrmPrincipal.HabilitarDesfazer(const AHabilitado: Boolean;
   const ADescricao: string);
@@ -524,7 +773,7 @@ begin
 end;
 
 // ────────────────────────────────────────────────────────────
-// IPrincipalView — diálogos e ciclo de vida
+// Diálogos
 // ────────────────────────────────────────────────────────────
 
 function TfrmPrincipal.PerguntarCaminhoDocx: string;
@@ -546,24 +795,22 @@ begin
 end;
 
 procedure TfrmPrincipal.ExibirErro(const AMensagem: string);
-begin
-  MessageDlg(AMensagem, mtError, [mbOK], 0);
-end;
+begin MessageDlg(AMensagem, mtError, [mbOK], 0); end;
 
 procedure TfrmPrincipal.ExibirInfo(const AMensagem: string);
-begin
-  MessageDlg(AMensagem, mtInformation, [mbOK], 0);
-end;
+begin MessageDlg(AMensagem, mtInformation, [mbOK], 0); end;
 
 procedure TfrmPrincipal.ExibirAviso(const AMensagem: string);
-begin
-  MessageDlg(AMensagem, mtWarning, [mbOK], 0);
-end;
+begin MessageDlg(AMensagem, mtWarning, [mbOK], 0); end;
 
 function TfrmPrincipal.Confirmar(const AMensagem: string): Boolean;
 begin
   Result := MessageDlg(AMensagem, mtConfirmation, [mbYes, mbNo], 0) = mrYes;
 end;
+
+// ────────────────────────────────────────────────────────────
+// Ciclo de vida
+// ────────────────────────────────────────────────────────────
 
 procedure TfrmPrincipal.MostrarProgresso(const AMensagem: string);
 begin
@@ -579,9 +826,7 @@ begin
 end;
 
 procedure TfrmPrincipal.FecharAplicacao;
-begin
-  Close;
-end;
+begin Close; end;
 
 // ────────────────────────────────────────────────────────────
 // Status da API
@@ -610,7 +855,6 @@ begin
 
     try
       Resposta := Http.Get(URL_MODELS);
-
       if Resposta.StatusCode = 200 then
         DefinirStatusAPI(True, '')
       else if Resposta.StatusCode = 401 then
@@ -677,6 +921,11 @@ function TfrmPrincipal.GetAoSelecionarCena: TProcCenaID;
 begin Result := FAoSelecionarCena; end;
 procedure TfrmPrincipal.SetAoSelecionarCena(const Value: TProcCenaID);
 begin FAoSelecionarCena := Value; end;
+
+function TfrmPrincipal.GetAoMarcarParagrafo: TProcParagrafoMarcado;
+begin Result := FAoMarcarParagrafo; end;
+procedure TfrmPrincipal.SetAoMarcarParagrafo(const Value: TProcParagrafoMarcado);
+begin FAoMarcarParagrafo := Value; end;
 
 function TfrmPrincipal.GetAoSelecionarVicio: TProcSimplesPrincipal;
 begin Result := FAoSelecionarVicio; end;

@@ -3,23 +3,19 @@
 {
   URespostaJsonRepository.pas
   ─────────────────────────────────────────────────────────────
-  Implementação de IRespostaRepository gravando em JSON.
+  Log append-only das respostas da IA.
 
-  Estratégia: mesmo padrão do Envio. O arquivo inteiro é
-  carregado, a nova entrada é anexada em memória, o arquivo é
-  regravado.
-
-  Particularidade: TResposta contém TEdicaoSugerida. Cada
-  edição serializada com paragrafo_id, chunk_index, id_vicio,
-  sugerido, motivo. Sem campo "original" (decisão travada —
-  original vem do Envio.JSON).
+  Correção importante: Append chama Respostas.Extract(AResposta)
+  antes de liberar a lista, para não destruir a TResposta do
+  chamador (bug de double-free).
   ─────────────────────────────────────────────────────────────
 }
 
 interface
 
 uses
-  UIRespostaRepository, UEdicaoSugerida;
+  UEdicaoSugerida,
+  UIRespostaRepository;
 
 type
   TRespostaJsonRepository = class(TInterfacedObject, IRespostaRepository)
@@ -52,7 +48,7 @@ const
   VERSAO_SCHEMA_RESPOSTA = 1;
 
 // ────────────────────────────────────────────────────────────
-// Utilitários internos
+// Utilitários
 // ────────────────────────────────────────────────────────────
 
 function DataHoraParaISO(const AData: TDateTime): string;
@@ -94,12 +90,9 @@ var
   Temp: string;
 begin
   Temp := ACaminho + '.tmp';
-
   TFile.WriteAllText(Temp, AConteudo, TEncoding.UTF8);
-
   if TFile.Exists(ACaminho) then
     TFile.Delete(ACaminho);
-
   TFile.Move(Temp, ACaminho);
 end;
 
@@ -111,7 +104,7 @@ begin
 end;
 
 // ────────────────────────────────────────────────────────────
-// Serialização: EdicaoSugerida
+// Serialização
 // ────────────────────────────────────────────────────────────
 
 function EdicaoParaJson(const AEdicao: TEdicaoSugerida): TJSONObject;
@@ -122,7 +115,6 @@ begin
   Result.AddPair('id_vicio', AEdicao.VicioID);
   Result.AddPair('sugerido', AEdicao.Sugerido);
   Result.AddPair('motivo', AEdicao.Motivo);
-  // Sem "original" — decisão travada.
 end;
 
 function JsonParaEdicao(const AObj: TJSONObject): TEdicaoSugerida;
@@ -134,10 +126,6 @@ begin
   Result.Sugerido := AObj.GetValue<string>('sugerido');
   Result.Motivo := AObj.GetValue<string>('motivo');
 end;
-
-// ────────────────────────────────────────────────────────────
-// Serialização: Resposta
-// ────────────────────────────────────────────────────────────
 
 function RespostaParaJson(const AResposta: TResposta): TJSONObject;
 var
@@ -198,7 +186,7 @@ begin
 end;
 
 // ────────────────────────────────────────────────────────────
-// Leitura / escrita do arquivo inteiro
+// Leitura / escrita
 // ────────────────────────────────────────────────────────────
 
 function CarregarTodas(const ACaminho: string): TObjectList<TResposta>;
@@ -298,6 +286,10 @@ begin
   try
     Respostas.Add(AResposta);
     GravarTodas(Respostas, ACaminho);
+
+    // ⚠ Desvincula antes do Free, para não destruir a AResposta
+    // do chamador.
+    Respostas.Extract(AResposta);
   finally
     Respostas.Free;
   end;
@@ -308,20 +300,21 @@ function TRespostaJsonRepository.BuscarPorChamada(const AIDChamada,
 var
   Respostas: TObjectList<TResposta>;
   R: TResposta;
+  I: Integer;
 begin
   Respostas := CarregarTodas(ACaminho);
   try
-    // Mais recente primeiro.
-    for var I := Respostas.Count - 1 downto 0 do
+    for I := Respostas.Count - 1 downto 0 do
     begin
       R := Respostas[I];
       if R.IDChamada = AIDChamada then
+      begin
+        Respostas.Extract(R);
         Exit(R);
+      end;
     end;
     Result := nil;
   finally
-    if Assigned(Result) then
-      Respostas.Extract(Result);
     Respostas.Free;
   end;
 end;
@@ -340,13 +333,13 @@ begin
       if R.IDChamada = AIDChamada then
       begin
         Resultado.Add(R);
-        Respostas.Extract(R);  // desvincula para não destruir
+        Respostas.Extract(R);
       end;
 
     Result := Resultado.ToArray;
   finally
     Resultado.Free;
-    Respostas.Free;  // as extraídas já foram desvinculadas
+    Respostas.Free;
   end;
 end;
 

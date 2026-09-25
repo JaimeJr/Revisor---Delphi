@@ -1,5 +1,16 @@
 ﻿unit URevisaoPresenter;
 
+{
+  URevisaoPresenter.pas
+  ─────────────────────────────────────────────────────────────
+  Presenter da tela de revisão.
+
+  Nesta versão:
+    • OnReenviar propaga os 4 caminhos para TParametrosRevisao
+      (Novo, Vicios, Envio, Resposta).
+  ─────────────────────────────────────────────────────────────
+}
+
 interface
 
 uses
@@ -26,11 +37,10 @@ type
     FRecusarUC: TRecusarEdicaoUseCase;
     FRevisarUC: TRevisarCenaUseCase;
 
-    FContexto: TContextoRevisao;   // não owned
-    FRevisaoUI: TRevisaoUI;         // owned
+    FContexto: TContextoRevisao;
+    FRevisaoUI: TRevisaoUI;
     FOnFechada: TProcRevisaoFechada;
 
-    // ─── Handlers dos eventos ───
     procedure OnMarcarEdicao(const AChave: string; const AMarcada: Boolean);
     procedure OnSelecionarEdicao(const AChave: string);
     procedure OnMarcarParagrafo(const AParagrafoID: TID;
@@ -41,7 +51,6 @@ type
     procedure OnReenviar;
     procedure OnFecharTela;
 
-    // ─── Auxiliares ───
     function AcharEdicaoPorChave(const AChave: string): TEdicaoUI;
     function AcharEdicaoPorParagrafo(const AParagrafoID: TID): TEdicaoUI;
     function AcharTextoAtualDoParagrafo(const AParagrafoID: TID): string;
@@ -113,8 +122,6 @@ end;
 
 procedure TRevisaoPresenter.Iniciar;
 begin
-  // Atribuições diretas — os tipos são `procedure of object`,
-  // compatíveis com os métodos do Presenter.
   FView.AoMarcarEdicao := OnMarcarEdicao;
   FView.AoSelecionarEdicao := OnSelecionarEdicao;
   FView.AoMarcarParagrafo := OnMarcarParagrafo;
@@ -230,14 +237,12 @@ begin
   TotalSelecionadas := 0;
 
   for E in FRevisaoUI.Edicoes do
-  begin
     if E.DentroEscopo and not E.Aplicada then
     begin
       Inc(TotalAplicaveis);
       if E.Selecionada then
         Inc(TotalSelecionadas);
     end;
-  end;
 
   FView.HabilitarAceitarSelecionadas(TotalSelecionadas > 0);
   FView.HabilitarAceitarTudo(TotalAplicaveis > 0);
@@ -246,7 +251,7 @@ begin
 end;
 
 // ────────────────────────────────────────────────────────────
-// Handlers dos eventos
+// Handlers
 // ────────────────────────────────────────────────────────────
 
 procedure TRevisaoPresenter.OnMarcarEdicao(const AChave: string;
@@ -394,30 +399,29 @@ begin
       Edicao := ReconstruirEdicaoParaUseCase(Ed);
       try
         try
-        if FAceitarUC.Executar(
-          FContexto.Manuscrito,
-          FContexto.CaminhoNovo,
-          FContexto.CaminhoVicios,
-          Edicao,
-          FContexto.IDChamada) then
-        begin
-          Ed.Aplicada := True;
-          Ed.Selecionada := False;
-          Inc(Aceitas);
-        end
-        else
-          Falhas.Add(Format('%s: parágrafo não encontrado no manuscrito.',
-          [Ed.ParagrafoID]));
+          if FAceitarUC.Executar(
+            FContexto.Manuscrito,
+            FContexto.CaminhoNovo,
+            FContexto.CaminhoVicios,
+            Edicao,
+            FContexto.IDChamada) then
+          begin
+            Ed.Aplicada := True;
+            Ed.Selecionada := False;
+            Inc(Aceitas);
+          end
+          else
+            Falhas.Add(Format('%s: parágrafo não encontrado.',
+              [Ed.ParagrafoID]));
         except
-        on Ex: Exception do
-          Falhas.Add(Format('%s: %s', [Ed.ParagrafoID, Ex.Message]));
+          on Ex: Exception do
+            Falhas.Add(Format('%s: %s', [Ed.ParagrafoID, Ex.Message]));
         end;
       finally
         Edicao.Free;
       end;
     end;
 
-    // Atualiza checkboxes das aplicadas.
     for Chave in AChaves do
     begin
       Ed := AcharEdicaoPorChave(Chave);
@@ -491,32 +495,35 @@ begin
 
   Params.CaminhoNovo := FContexto.CaminhoNovo;
   Params.CaminhoVicios := FContexto.CaminhoVicios;
+  Params.CaminhoEnvio := FContexto.CaminhoEnvio;
+  Params.CaminhoResposta := FContexto.CaminhoResposta;
   Params.CenaID := FContexto.CenaID;
   Params.Modo := FContexto.Modo;
   Params.Selecoes := ReconstruirSelecoes;
   Params.Observacao := Obs;
 
-  FView.MostrarProgresso('Reenviando à IA...');
+  NovaResposta := nil;
   try
-    try
-      NovaResposta := FRevisarUC.Executar(Params);
-    except
-      on E: Exception do
+    FMediador.ExecutarComLoading('Reenviando à IA...',
+      procedure
       begin
-        FView.OcultarProgresso;
-        FView.ExibirErro('Falha no reenvio: ' + E.Message);
-        Exit;
-      end;
+        NovaResposta := FRevisarUC.Executar(Params);
+      end);
+  except
+    on E: Exception do
+    begin
+      FView.ExibirErro('Falha no reenvio: ' + E.Message);
+      Exit;
     end;
-
-    // Substitui a resposta no contexto (libera a antiga).
-    FContexto.SubstituirResposta(NovaResposta);
-    ReconstruirRevisaoUI(FContexto.Resposta, FContexto.CenaID);
-    FView.ExibirRevisao(FRevisaoUI);
-    AtualizarBotoes;
-  finally
-    FView.OcultarProgresso;
   end;
+
+  if NovaResposta = nil then
+    Exit;
+
+  FContexto.SubstituirResposta(NovaResposta);
+  ReconstruirRevisaoUI(FContexto.Resposta, FContexto.CenaID);
+  FView.ExibirRevisao(FRevisaoUI);
+  AtualizarBotoes;
 end;
 
 // ────────────────────────────────────────────────────────────

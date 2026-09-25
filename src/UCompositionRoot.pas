@@ -5,23 +5,11 @@
   ─────────────────────────────────────────────────────────────
   Raiz de composição da aplicação.
 
-  Monta TODAS as dependências na ordem correta, injeta nos
-  Presenters e expõe Iniciar / Finalizar.
-
-  Ownership:
-    • O CompositionRoot é dono de tudo que cria (UseCases,
-      CommandStack, Presenter, Mediador).
-    • As interfaces (repos, cache, prompt factory, parser,
-      revisor) são reference-counted — basta manter referências.
-    • O TConfigApp é singleton, não é liberado aqui.
-    • O frmPrincipal é do Application, não é liberado aqui.
-
-  Ordem de destruição (em Finalizar):
-    1. Presenter  (referencia View + UseCases)
-    2. Mediador   (referencia UseCases + repos)
-    3. UseCases   (referenciam repos via interface)
-    4. CommandStack
-    5. Interfaces saem de escopo por ref count
+  Nesta versão:
+    • O revisor NÃO recebe mais caminhos de Envio/Resposta —
+      eles vêm por TChamada.
+    • O revisor recebe apenas CaminhoVicios, que é fixo por
+      instalação e necessário para o prompt.
   ─────────────────────────────────────────────────────────────
 }
 
@@ -69,7 +57,6 @@ uses
 type
   TCompositionRoot = class
   private
-    // ─── Interfaces (ref-counted, não liberadas manualmente) ───
     FDocxReader: IDocxReader;
     FDocxWriter: IDocxWriter;
     FParser: IParserManuscrito;
@@ -82,7 +69,6 @@ type
     FPromptFactory: IPromptFactory;
     FRevisor: IRevisorIA;
 
-    // ─── Classes com ownership explícito ───
     FCommandStack: TCommandStack;
     FImportarUC: TImportarManuscritoUseCase;
     FExportarUC: TExportarManuscritoUseCase;
@@ -93,22 +79,11 @@ type
     FManterVicioUC: TManterVicioUseCase;
     FMediador: TMediadorApp;
     FPresenter: TPrincipalPresenter;
-
-    function CaminhoViciosPadrao: string;
   public
     constructor Create;
     destructor Destroy; override;
 
-    /// <summary>
-    ///   Amarra a View ao Presenter e chama Iniciar. Deve ser
-    ///   chamado depois de Application.CreateForm.
-    /// </summary>
     procedure Iniciar(const AView: TfrmPrincipal);
-
-    /// <summary>
-    ///   Libera Presenter e Mediador. Chamado no finally do
-    ///   Application.Run.
-    /// </summary>
     procedure Finalizar;
   end;
 
@@ -125,14 +100,14 @@ var
 begin
   inherited Create;
 
-  // ─── 1. Config (singleton, carrega chave do disco) ───
+  // ─── 1. Config ───
   Config := TConfigApp.Instancia;
 
-  // ─── 2. Adaptadores de .docx ───
+  // ─── 2. Adaptadores .docx ───
   FDocxReader := TDocxReaderOfficeXML4D.Create;
   FDocxWriter := TDocxWriterOfficeXML4D.Create;
 
-  // ─── 3. Parser de manuscrito ───
+  // ─── 3. Parser ───
   FParser := TParserManuscrito.Create(FDocxReader,
     Config.LimiteParagrafoPalavras);
 
@@ -143,10 +118,10 @@ begin
   FRespostaRepo := TRespostaJsonRepository.Create;
   FViciosRepo := TViciosJsonRepository.Create;
 
-  // ─── 5. Cache de chamadas ───
+  // ─── 5. Cache ───
   FCache := TCacheMemoria.Create;
 
-  // ─── 6. Construtores de prompt ───
+  // ─── 6. Prompts ───
   FPromptFactory := TPromptFactory.Create;
 
   // ─── 7. Revisor IA ───
@@ -159,8 +134,8 @@ begin
     FCache,
     FEnvioRepo,
     FRespostaRepo,
-    '',
-    '',
+    FViciosRepo,
+    Config.CaminhoViciosJSON,
     Config.PrecoInputPorMilhao,
     Config.PrecoOutputPorMilhao);
 
@@ -199,18 +174,11 @@ begin
   inherited;
 end;
 
-function TCompositionRoot.CaminhoViciosPadrao: string;
-begin
-  Result := TConfigApp.Instancia.CaminhoViciosJSON;
-end;
-
 procedure TCompositionRoot.Iniciar(const AView: TfrmPrincipal);
 begin
   if not Assigned(AView) then
     raise Exception.Create('TfrmPrincipal não pode ser nil.');
 
-  // O Presenter recebe a View como IPrincipalView. Como o
-  // frmPrincipal implementa essa interface, é só passar.
   FPresenter := TPrincipalPresenter.Create(
     AView,
     FMediador,
@@ -239,9 +207,6 @@ begin
   FreeAndNil(FExportarUC);
   FreeAndNil(FImportarUC);
   FreeAndNil(FCommandStack);
-
-  // As interfaces saem de escopo por ref count quando o
-  // CompositionRoot é liberado. Não é preciso nil nelas.
 end;
 
 end.

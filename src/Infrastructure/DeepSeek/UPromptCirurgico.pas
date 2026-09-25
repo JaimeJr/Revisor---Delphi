@@ -5,24 +5,10 @@
   ─────────────────────────────────────────────────────────────
   Construtor de prompt no modo cirúrgico.
 
-  Objetivo:
-    • System prompt curto (~200 tokens) com papel, regras e
-      lista dos vícios injetados (ID + dica).
-    • User message contendo o texto dos parágrafos selecionados,
-      cada um prefixado pelo ID e pelo índice de chunk.
-    • Se houver observação do usuário (reenvio), ela vai em
-      bloco destacado no fim do user message.
-
-  Decisão sobre "original":
-    • O system NÃO pede o texto original na resposta.
-    • A IA devolve apenas {paragrafo_id, chunk_index, id_vicio,
-      sugerido, motivo. O original é resolvido depois pelo
-      chamador, consultando o Envio.JSON.
-
-  Decisão sobre formato de saída:
-    • response_format = "json_object" força JSON válido.
-    • Ainda assim o system descreve o formato — sem isso a IA
-      tende a inventar chaves.
+  Nesta versão:
+    • Campo "motivo" restrito a "Ok" ou "Corrigido".
+      Reduz tokens de saída sem perder informação útil
+      (se houve ou não correção).
   ─────────────────────────────────────────────────────────────
 }
 
@@ -60,17 +46,18 @@ const
 
   FORMATO_RESPOSTA_JSON =
     '{' + sLineBreak +
-    '  "vicio_geral": "resumo em uma frase ou null",' + sLineBreak +
+    '  "vicio_geral": "resumo curto ou null",' + sLineBreak +
     '  "edicoes": [' + sLineBreak +
     '    {' + sLineBreak +
     '      "paragrafo_id": "cap-N-cena-M-pXX",' + sLineBreak +
     '      "chunk_index": 1,' + sLineBreak +
     '      "id_vicio": "id_do_vicio_listado",' + sLineBreak +
-    '      "sugerido": "parágrafo COMPLETO revisado, não só o trecho alterado",' + sLineBreak +
-    '      "motivo": "explicação curta"' + sLineBreak +
+    '      "sugerido": "parágrafo COMPLETO revisado",' + sLineBreak +
+    '      "motivo": "Ok ou Corrigido"' + sLineBreak +
     '    }' + sLineBreak +
     '  ]' + sLineBreak +
     '}';
+
 { TPromptCirurgico }
 
 function TPromptCirurgico.Versao: string;
@@ -109,13 +96,14 @@ begin
     SB.AppendLine('Regras:');
     SB.AppendLine('- Faça edições cirúrgicas: mude só o trecho afetado.');
     SB.AppendLine('- Devolva no campo "sugerido" o PARÁGRAFO INTEIRO revisado,');
-    SB.AppendLine('  não apenas o trecho alterado. O texto que já estava no');
-    SB.AppendLine('  original deve reaparecer no sugerido, com as correções');
-    SB.AppendLine('  aplicadas.');
+    SB.AppendLine('  não apenas o trecho alterado.');
+    SB.AppendLine('- Se NÃO houver correção a fazer, devolva o parágrafo');
+    SB.AppendLine('  inalterado e use "motivo": "Ok".');
+    SB.AppendLine('- Se houver correção aplicada, use "motivo": "Corrigido".');
+    SB.AppendLine('- NÃO escreva explicações no campo "motivo".');
     SB.AppendLine('- Preserve sentido e tom do original.');
     SB.AppendLine('- Não invente informação nova no texto sugerido.');
     SB.AppendLine('- Se não houver vício no parágrafo, não o inclua na resposta.');
-    SB.AppendLine;
     SB.AppendLine;
     SB.AppendLine('Responda SOMENTE com JSON no formato abaixo, sem markdown,');
     SB.AppendLine('sem texto antes ou depois:');
@@ -149,9 +137,6 @@ begin
       if Assigned(V) then
         Dica := V.DicaCorrecao
       else
-        // Vício marcado pelo usuário mas não presente no catálogo.
-        // Acontece se o catálogo foi alterado depois do Novo.JSON
-        // ter sido gerado. Injeta só o ID para a IA não travar.
         Dica := '(sem dica disponível)';
 
       SB.Append('- ').Append(ID).Append(': ').AppendLine(Dica);
@@ -197,8 +182,6 @@ begin
   try
     for Sel in AChamada.Selecoes do
     begin
-      // Cabeçalho identifica o parágrafo e o chunk para a IA
-      // devolver corretamente no JSON.
       Cabecalho := Format('[%s | chunk %d/%d | vicio: %s]',
         [Sel.ParagrafoID, Sel.ChunkIndex, Sel.ChunksTotais, Sel.VicioID]);
       SB.AppendLine(Cabecalho);
