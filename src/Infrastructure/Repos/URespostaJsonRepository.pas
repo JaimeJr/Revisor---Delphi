@@ -19,7 +19,7 @@
 interface
 
 uses
-  UIRespostaRepository;
+  UIRespostaRepository, UEdicaoSugerida;
 
 type
   TRespostaJsonRepository = class(TInterfacedObject, IRespostaRepository)
@@ -44,10 +44,8 @@ uses
   System.Classes,
   System.IOUtils,
   System.DateUtils,
-  System.TimeZone,
   System.JSON,
   System.Generics.Collections,
-  UEdicaoSugerida,
   UValores;
 
 const

@@ -3,23 +3,19 @@
 {
   UEdicaoSugerida.pas
   ─────────────────────────────────────────────────────────────
-  Value Objects que representam a resposta da IA a uma chamada
-  de revisão: uma edição individual (TEdicaoSugerida) e o
-  agregado da resposta completa (TResposta).
+  Value Objects que representam a resposta da IA:
+    • TEdicaoSugerida — uma edição cirúrgica individual.
+    • TResposta      — o agregado completo da resposta.
+
+  ORDEM DE DECLARAÇÃO IMPORTA:
+    TEdicaoSugerida vem ANTES de TResposta porque TResposta a
+    referencia (FEdicoes: TObjectList<TEdicaoSugerida>). Se a
+    ordem for invertida, o compilador acusa "undeclared
+    identifier".
 
   Decisão travada:
     • TEdicaoSugerida NÃO guarda o texto original. O original
-      vem sempre do Envio.JSON, resolvido por ParagrafoID +
-      ChunkIndex. Isso elimina duplicação e mantém uma única
-      fonte da verdade.
-
-  Regras:
-    • Apenas VOs. Nenhuma lógica de I/O, HTTP, VCL ou JSON.
-    • TResposta é imutável do ponto de vista de "resposta da IA"
-      — mas permite mutação do estado de aceitação por edição,
-      que vive aqui apenas durante a sessão da tela de revisão.
-    • StatusParse classifica o resultado bruto para a UI decidir
-      o que mostrar (edição normal, erro de parse, vazio, etc.).
+      vive em Envio.JSON, resolvido por ParagrafoID + ChunkIndex.
   ─────────────────────────────────────────────────────────────
 }
 
@@ -31,18 +27,10 @@ uses
   UValores;
 
 type
-  // ────────────────────────────────────────────────────────────
-  // Edição sugerida
-  // ────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════
+  // TEdicaoSugerida (declarada primeiro)
+  // ═══════════════════════════════════════════════════════════
 
-  /// <summary>
-  ///   Uma edição cirúrgica proposta pela IA para um parágrafo.
-  /// </summary>
-  /// <remarks>
-  ///   O texto original correspondente é resolvido pelo chamador
-  ///   consultando o Envio.JSON pelo par (ParagrafoID, ChunkIndex).
-  ///   Não é armazenado aqui — decisão de arquitetura.
-  /// </remarks>
   TEdicaoSugerida = class
   private
     FParagrafoID: TID;
@@ -50,10 +38,8 @@ type
     FVicioID: string;
     FSugerido: string;
     FMotivo: string;
-
-    // Estado de sessão (não persiste em Resposta.JSON)
-    FSelecionada: Boolean;   // usuário marcou para aceitar
-    FAplicada: Boolean;      // já foi aceita em alguma rodada
+    FSelecionada: Boolean;
+    FAplicada: Boolean;
   public
     constructor Create;
 
@@ -66,26 +52,14 @@ type
     property Selecionada: Boolean read FSelecionada write FSelecionada;
     property Aplicada: Boolean read FAplicada write FAplicada;
 
-    /// <summary>
-    ///   True se a edição é válida (tem parágrafo, vício e texto).
-    ///   Usado para filtrar respostas incompletas da IA.
-    /// </summary>
     function EhValida: Boolean;
-
-    /// <summary>
-    ///   Chave estável para busca e cache: paragrafo + chunk + vício.
-    /// </summary>
     function Chave: string;
   end;
 
-  // ────────────────────────────────────────────────────────────
-  // Resposta da IA
-  // ────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════
+  // TResposta (declarada depois — referencia TEdicaoSugerida)
+  // ═══════════════════════════════════════════════════════════
 
-  /// <summary>
-  ///   Agregado completo da resposta da IA a uma chamada.
-  ///   Corresponde a uma entrada de Resposta.JSON.
-  /// </summary>
   TResposta = class
   private
     FIDChamada: string;
@@ -98,9 +72,6 @@ type
     FVicioGeral: string;
     FEdicoes: TObjectList<TEdicaoSugerida>;
     FErroParse: string;
-
-    // IDs permitidos (preenchidos pelo UseCase a partir do Envio)
-    // para classificar edições como dentro/fora de escopo.
     FParagrafosPermitidos: TList<TID>;
     FViciosPermitidos: TList<string>;
   public
@@ -122,60 +93,30 @@ type
     property Edicoes: TObjectList<TEdicaoSugerida> read FEdicoes;
     property ErroParse: string read FErroParse write FErroParse;
 
-    // ─── Escopo (definido pelo UseCase antes de classificar) ───
-
-    /// <summary>
-    ///   Define o conjunto de parágrafos que estavam na chamada.
-    ///   Usado para classificar edições como dentro/fora de escopo.
-    /// </summary>
     procedure DefinirParagrafosPermitidos(const AIDs: TArray<TID>);
-
-    /// <summary>Define o conjunto de vícios que estavam na chamada.</summary>
     procedure DefinirViciosPermitidos(const AIDs: TArray<string>);
 
-    // ─── Consultas ───
-
-    /// <summary>True se há pelo menos uma edição válida.</summary>
     function TemEdicoes: Boolean;
-
-    /// <summary>Total de tokens consumidos (prompt + resposta).</summary>
     function TokensTotais: Integer;
-
-    /// <summary>
-    ///   Edições aplicáveis: válidas E dentro do escopo enviado.
-    /// </summary>
     function EdicoesAplicaveis: TArray<TEdicaoSugerida>;
-
-    /// <summary>
-    ///   Edições fora do escopo: parágrafo ou vício que não
-    ///   estavam no envio. UI mostra, mas desabilita aceitar.
-    /// </summary>
     function EdicoesForaEscopo: TArray<TEdicaoSugerida>;
+    function EdicoesDeParagrafo(
+      const AParagrafoID: TID): TArray<TEdicaoSugerida>;
 
-    /// <summary>Edições aplicáveis de um parágrafo específico.</summary>
-    function EdicoesDeParagrafo(const AParagrafoID: TID): TArray<TEdicaoSugerida>;
-
-    /// <summary>
-    ///   Classifica e ajusta StatusParse com base nas edições e
-    ///   nos conjuntos de permissão. Deve ser chamado pelo
-    ///   UseCase após popular as edições e os permitidos.
-    /// </summary>
     procedure ReclassificarStatus;
+    function EdicaoDentroDoEscopo(
+      const AEdicao: TEdicaoSugerida): Boolean;
+
+    procedure LimparSelecao;
+    procedure SelecionarTodasAplicaveis;
+    function EdicoesSelecionadas: TArray<TEdicaoSugerida>;
 
     /// <summary>
-    ///   True se a edição está dentro do escopo enviado
-    ///   (parágrafo permitido E vício permitido).
+    ///   Cópia profunda. Usada pelo cache para não compartilhar
+    ///   estado com o chamador. Copia edições, escopo e todos
+    ///   os campos primitivos.
     /// </summary>
-    function EdicaoDentroDoEscopo(const AEdicao: TEdicaoSugerida): Boolean;
-
-    /// <summary>Limpa o estado de seleção de todas as edições.</summary>
-    procedure LimparSelecao;
-
-    /// <summary>Marca todas as edições aplicáveis como selecionadas.</summary>
-    procedure SelecionarTodasAplicaveis;
-
-    /// <summary>Edições selecionadas (para aceite em lote).</summary>
-    function EdicoesSelecionadas: TArray<TEdicaoSugerida>;
+    function Clonar: TResposta;
   end;
 
 implementation
@@ -317,19 +258,15 @@ procedure TResposta.ReclassificarStatus;
 var
   TemForaEscopo: Boolean;
 begin
-  // Se já foi classificado como parse_error, não sobrescreve.
   if FStatusParse = spParseError then
     Exit;
 
-  // Sem edições → vazio (IA não encontrou nada).
   if not TemEdicoes then
   begin
     FStatusParse := spVazio;
     Exit;
   end;
 
-  // Há edições fora do escopo? Marca como fora_escopo, mas
-  // as aplicáveis continuam válidas (a UI mostra ambas).
   TemForaEscopo := Length(EdicoesForaEscopo) > 0;
   if TemForaEscopo and (Length(EdicoesAplicaveis) = 0) then
     FStatusParse := spForaEscopo
@@ -367,6 +304,48 @@ begin
     Result := Lista.ToArray;
   finally
     Lista.Free;
+  end;
+end;
+
+function TResposta.Clonar: TResposta;
+var
+  E, NovaE: TEdicaoSugerida;
+  ID: TID;
+  V: string;
+begin
+  Result := TResposta.Create;
+  try
+    Result.FIDChamada := FIDChamada;
+    Result.FTimestamp := FTimestamp;
+    Result.FTokensPrompt := FTokensPrompt;
+    Result.FTokensResposta := FTokensResposta;
+    Result.FCustoEstimado := FCustoEstimado;
+    Result.FRespostaBruta := FRespostaBruta;
+    Result.FStatusParse := FStatusParse;
+    Result.FVicioGeral := FVicioGeral;
+    Result.FErroParse := FErroParse;
+
+    for E in FEdicoes do
+    begin
+      NovaE := TEdicaoSugerida.Create;
+      NovaE.ParagrafoID := E.ParagrafoID;
+      NovaE.ChunkIndex := E.ChunkIndex;
+      NovaE.VicioID := E.VicioID;
+      NovaE.Sugerido := E.Sugerido;
+      NovaE.Motivo := E.Motivo;
+      NovaE.Selecionada := E.Selecionada;
+      NovaE.Aplicada := E.Aplicada;
+      Result.FEdicoes.Add(NovaE);
+    end;
+
+    for ID in FParagrafosPermitidos do
+      Result.FParagrafosPermitidos.Add(ID);
+
+    for V in FViciosPermitidos do
+      Result.FViciosPermitidos.Add(V);
+  except
+    Result.Free;
+    raise;
   end;
 end;
 

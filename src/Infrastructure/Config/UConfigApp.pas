@@ -32,6 +32,9 @@ type
   private
     FApiKey: string;
     FModelo: string;
+    FEndpoint: string;
+    FPrecoInputPorMilhao: Double;
+    FPrecoOutputPorMilhao: Double;
     FTemperature: Double;
     FMaxTokens: Integer;
     FLimiteParagrafoPalavras: Integer;
@@ -55,6 +58,11 @@ type
     property Modelo: string read FModelo write FModelo;
     property Temperature: Double read FTemperature write FTemperature;
     property MaxTokens: Integer read FMaxTokens write FMaxTokens;
+    property Endpoint: string read FEndpoint write FEndpoint;
+    property PrecoInputPorMilhao: Double
+      read FPrecoInputPorMilhao write FPrecoInputPorMilhao;
+    property PrecoOutputPorMilhao: Double
+      read FPrecoOutputPorMilhao write FPrecoOutputPorMilhao;
 
     // ─── Regras de domínio ───
     property LimiteParagrafoPalavras: Integer
@@ -130,6 +138,9 @@ begin
   FPastaDados := TPath.Combine(ExtractFilePath(ParamStr(0)), 'data');
   FPastaManuscritos := TPath.Combine(FPastaDados, 'manuscritos');
   FPastaLogs := TPath.Combine(FPastaDados, 'logs');
+  FEndpoint := 'https://api.deepseek.com/chat/completions';
+  FPrecoInputPorMilhao := 0.27;   // USD por 1M tokens de input
+  FPrecoOutputPorMilhao := 1.10;  // USD por 1M tokens de output
 end;
 
 destructor TConfigApp.Destroy;

@@ -3,18 +3,27 @@
 {
   UIParserManuscrito.pas
   ─────────────────────────────────────────────────────────────
-  Contrato do parser de manuscrito. Lê um .docx e devolve o
-  manuscrito estruturado + o log de anomalias detectadas.
+  Contrato do parser de manuscrito + agregado TParseResultado.
 
-  Decisão: o parser NUNCA falha. Ele processa o que consegue e
-  registra anomalias tipadas em TParseLog. Erros fatais (arquivo
-  inexistente, .docx corrompido) são a única exceção.
+  TParseResultado encapsula Manuscrito + Log. Ownership:
+
+    • Criado pelo parser, com posse do Manuscrito e do Log.
+    • Destroy libera ambos automaticamente.
+    • DetachManuscrito / DetachLog permitem ao chamador
+      "roubar" um dos dois sem que sejam liberados pelo
+      TParseResultado.
+
+  Isso é usado pelo Presenter principal, que desanexa
+  Manuscrito e Log do TImportacao logo após importar, para
+  mantê-los vivos durante toda a sessão sem depender do
+  ciclo de vida do TImportacao.
   ─────────────────────────────────────────────────────────────
 }
 
 interface
 
 uses
+  System.SysUtils,
   UManuscrito,
   UAnomaliaParse;
 
@@ -34,6 +43,22 @@ type
 
     property Manuscrito: TManuscrito read FManuscrito;
     property Log: TParseLog read FLog;
+
+    /// <summary>
+    ///   Devolve o Manuscrito e o remove do ownership interno.
+    ///   Após esta chamada, TParseResultado.Destroy não o libera
+    ///   mais. Quem chamar assume a responsabilidade.
+    ///   Retorna nil se já foi desanexado antes.
+    /// </summary>
+    function DetachManuscrito: TManuscrito;
+
+    /// <summary>
+    ///   Devolve o Log e o remove do ownership interno.
+    ///   Após esta chamada, TParseResultado.Destroy não o libera
+    ///   mais. Quem chamar assume a responsabilidade.
+    ///   Retorna nil se já foi desanexado antes.
+    /// </summary>
+    function DetachLog: TParseLog;
   end;
 
   /// <summary>
@@ -41,7 +66,7 @@ type
   ///   de leitura (.docx via OfficeXML4D, fake para testes, etc.).
   /// </summary>
   IParserManuscrito = interface
-    ['{0787E190-4655-45AB-A793-59FA4D7430B0}']
+    ['{A1B2C3D4-0001-4000-8000-000000000001}']
 
     /// <summary>
     ///   Lê o arquivo e devolve o manuscrito + log.
@@ -53,6 +78,8 @@ type
 
 implementation
 
+{ TParseResultado }
+
 constructor TParseResultado.Create(const AManuscrito: TManuscrito;
   const ALog: TParseLog);
 begin
@@ -63,9 +90,23 @@ end;
 
 destructor TParseResultado.Destroy;
 begin
+  // FManuscrito e FLog podem ser nil se já foram desanexados.
+  // TObject.Free aceita nil — nada a proteger.
   FManuscrito.Free;
   FLog.Free;
   inherited;
+end;
+
+function TParseResultado.DetachManuscrito: TManuscrito;
+begin
+  Result := FManuscrito;
+  FManuscrito := nil;
+end;
+
+function TParseResultado.DetachLog: TParseLog;
+begin
+  Result := FLog;
+  FLog := nil;
 end;
 
 end.

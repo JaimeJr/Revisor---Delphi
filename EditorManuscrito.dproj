@@ -103,6 +103,8 @@
     <PropertyGroup Condition="'$(Cfg_1_Win32)'!=''">
         <DCC_RemoteDebug>false</DCC_RemoteDebug>
         <AppDPIAwarenessMode>PerMonitorV2</AppDPIAwarenessMode>
+        <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
+        <VerInfo_Locale>1033</VerInfo_Locale>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_1_Win64)'!=''">
         <AppDPIAwarenessMode>PerMonitorV2</AppDPIAwarenessMode>
@@ -123,12 +125,7 @@
         <DelphiCompile Include="$(MainSource)">
             <MainSource>MainSource</MainSource>
         </DelphiCompile>
-        <DCCReference Include="src\Presentation\Forms\frmPrincipal.pas">
-            <Form>Form1</Form>
-        </DCCReference>
         <DCCReference Include="src\Domain\UValores.pas"/>
-        <DCCReference Include="src\Domain\UManuscrito.pas"/>
-        <DCCReference Include="src\Domain\UEdicaoSugerida.pas"/>
         <DCCReference Include="src\Domain\UAnomaliaParser.pas"/>
         <DCCReference Include="src\Domain\UServicosDominio.pas"/>
         <DCCReference Include="src\Domain\UAnomaliaParse.pas"/>
@@ -140,14 +137,71 @@
         <DCCReference Include="src\Domain\Contratos\UINovoRepository.pas"/>
         <DCCReference Include="src\Infrastructure\Config\UConfigApp.pas"/>
         <DCCReference Include="src\Infrastructure\Config\UKeyLoader.pas"/>
-        <DCCReference Include="src\Domain\Contratos\UIRespostaRepository.pas"/>
         <DCCReference Include="src\Infrastructure\Repos\UAntesJsonRepository.pas"/>
         <DCCReference Include="src\Infrastructure\Repos\UNovoJsonRepository.pas"/>
         <DCCReference Include="src\Infrastructure\Repos\UEnvioJsonRepository.pas"/>
-        <DCCReference Include="src\Domain\Contratos\UIEnvioRepository.pas"/>
-        <DCCReference Include="src\Infrastructure\Repos\UViciosJsonRepository.pas"/>
-        <DCCReference Include="src\Domain\Contratos\UIViciosRepository.pas"/>
         <DCCReference Include="src\Domain\UVicio.pas"/>
+        <DCCReference Include="src\Infrastructure\Repos\UViciosJsonRepository.pas"/>
+        <DCCReference Include="src\Application\UImportarManuscritoUseCase.pas"/>
+        <DCCReference Include="src\Application\UExportarManuscritoUseCase.pas"/>
+        <DCCReference Include="src\Infrastructure\Text\UNormalizadorTexto.pas"/>
+        <DCCReference Include="src\Infrastructure\Repos\URespostaJsonRepository.pas"/>
+        <DCCReference Include="src\Domain\UEdicaoSugerida.pas"/>
+        <DCCReference Include="src\Infrastructure\DeepSeek\UPromptCirurgico.pas"/>
+        <DCCReference Include="src\Domain\Contratos\UIConstrutorPrompt.pas"/>
+        <DCCReference Include="src\Infrastructure\DeepSeek\UPromptVarredura.pas"/>
+        <DCCReference Include="src\Infrastructure\DeepSeek\UPromptFactory.pas"/>
+        <DCCReference Include="src\Domain\Contratos\UIRevisorIA.pas"/>
+        <DCCReference Include="src\Domain\Contratos\UICacheChamadas.pas"/>
+        <DCCReference Include="src\Infrastructure\DeepSeek\URevisorDeepSeek.pas"/>
+        <DCCReference Include="src\Domain\Contratos\UIViciosRepository.pas"/>
+        <DCCReference Include="src\Application\URevisarCenaUseCase.pas"/>
+        <DCCReference Include="src\Application\Commands\UAceitarEdicaoCommand.pas"/>
+        <DCCReference Include="src\Application\UAceitarEdicaoUseCase.pas"/>
+        <DCCReference Include="src\Application\Commands\UCommandStack.pas"/>
+        <DCCReference Include="src\Domain\Contratos\UIComandoEditorial.pas"/>
+        <DCCReference Include="src\Application\URecusarEdicaoUseCase.pas"/>
+        <DCCReference Include="src\Application\Commands\URecusarEdicaoCommand.pas"/>
+        <DCCReference Include="src\Application\UManterVicioUseCase.pas"/>
+        <DCCReference Include="src\Presentation\Interfaces\UIPrincipalView.pas"/>
+        <DCCReference Include="src\Domain\UTiposUI.pas"/>
+        <DCCReference Include="src\Presentation\Forms\frmPrincipal.pas">
+            <Form>frmPrincipal</Form>
+        </DCCReference>
+        <DCCReference Include="src\Domain\Contratos\UIMediadorApp.pas"/>
+        <DCCReference Include="src\Application\Commands\UMarcarRevisadoManualCommand.pas"/>
+        <DCCReference Include="src\Application\UMarcarRevisadoManualUseCase.pas"/>
+        <DCCReference Include="src\Domain\UManuscrito.pas"/>
+        <DCCReference Include="src\Presentation\Interfaces\UIViciosView.pas">
+            <Form>$R *.res</Form>
+        </DCCReference>
+        <DCCReference Include="src\Presentation\Presenters\URevisaoPresenter.pas"/>
+        <DCCReference Include="src\Presentation\Interfaces\UIRevisaoView.pas">
+            <Form>$R *.res</Form>
+        </DCCReference>
+        <DCCReference Include="src\Presentation\Forms\frmReenvio.pas">
+            <Form>frmReenvio</Form>
+        </DCCReference>
+        <DCCReference Include="src\Presentation\Forms\frmRevisao.pas">
+            <Form>frmRevisao</Form>
+        </DCCReference>
+        <DCCReference Include="src\Presentation\Presenters\UViciosPresenter.pas"/>
+        <DCCReference Include="src\Presentation\Forms\frmVicios.pas">
+            <Form>frmVicios</Form>
+        </DCCReference>
+        <DCCReference Include="src\Presentation\UMediadorApp.pas"/>
+        <DCCReference Include="src\UCompositionRoot.pas"/>
+        <DCCReference Include="src\Infrastructure\Docx\UDocxReaderOfficeXML4D.pas"/>
+        <DCCReference Include="src\Infrastructure\Docx\UDocxWriterOfficeXML4D.pas"/>
+        <DCCReference Include="src\Infrastructure\Docx\UParserManuscrito.pas"/>
+        <DCCReference Include="src\Infrastructure\Cache\UCacheMemoria.pas"/>
+        <DCCReference Include="src\Domain\Contratos\UIEnvioRepository.pas"/>
+        <DCCReference Include="src\Domain\Contratos\UIRespostaRepository.pas"/>
+        <DCCReference Include="src\Presentation\Presenters\UPrincipalPresenter.pas"/>
+        <DCCReference Include="src\Presentation\Forms\frmLoading.pas">
+            <Form>frmLoading</Form>
+            <FormType>dfm</FormType>
+        </DCCReference>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>
@@ -168,14 +222,12 @@
                 <Source>
                     <Source Name="MainSource">EditorManuscrito.dpr</Source>
                 </Source>
+                <Excluded_Packages>
+                    <Excluded_Packages Name="$(BDSBIN)\dcloffice2k370.bpl">Microsoft Office 2000 Sample Automation Server Wrapper Components</Excluded_Packages>
+                    <Excluded_Packages Name="$(BDSBIN)\dclofficexp370.bpl">Microsoft Office XP Sample Automation Server Wrapper Components</Excluded_Packages>
+                </Excluded_Packages>
             </Delphi.Personality>
             <Deployment Version="5">
-                <DeployFile LocalName="Win32\Debug\EditorManuscrito.exe" Configuration="Debug" Class="ProjectOutput">
-                    <Platform Name="Win32">
-                        <RemoteName>EditorManuscrito.exe</RemoteName>
-                        <Overwrite>true</Overwrite>
-                    </Platform>
-                </DeployFile>
                 <DeployFile LocalName="Win32\Debug\EditorManuscrito.exe" Configuration="Debug" Class="ProjectOutput">
                     <Platform Name="Win32">
                         <RemoteName>EditorManuscrito.exe</RemoteName>

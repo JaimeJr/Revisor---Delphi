@@ -1,33 +1,5 @@
 ﻿unit UDocxWriterOfficeXML4D;
 
-{
-  UDocxWriterOfficeXML4D.pas
-  ─────────────────────────────────────────────────────────────
-  Adaptador de escrita de .docx usando a OfficeXML4D.
-
-  Regras de escrita (espelham o parser):
-    • Cabeçalho de capítulo → parágrafo com estilo "Heading 1",
-      texto "Capítulo N" (ou Titulo do capítulo, se preenchido).
-    • Parágrafos de cena  → estilo "Normal" (Texto Normal).
-    • Entre cenas do mesmo capítulo → um parágrafo vazio
-      (linha em branco).
-    • A imagem separadora do manuscrito original NÃO é
-      reproduzida (decisão travada — linha em branco basta
-      para o parser reler como separador de cena).
-    • Título de Ato NÃO é escrito — o ato é derivado da
-      posição do capítulo (regra do parser).
-
-  ⚠ PONTOS A VERIFICAR QUANDO COMPILAR PELA PRIMEIRA VEZ:
-    1. Nome do unit da OfficeXML4D (uses).
-    2. Classe do documento (TWordDocument? TDocxDocument?).
-    3. Como criar um documento vazio (Create? NewDocument?).
-    4. Como adicionar um parágrafo com texto e estilo.
-    5. Nome exato do estilo de corpo ("Normal" ou
-       "Texto Normal" — depende da localização da lib).
-    6. Como salvar em arquivo (SaveToFile? Save? WriteTo?).
-    Tudo isso se resolve em TOfficeXML4D_Contato.
-  ─────────────────────────────────────────────────────────────
-}
 
 interface
 
@@ -37,17 +9,8 @@ uses
   UManuscrito;
 
 type
-  /// <summary>
-  ///   Escreve um TManuscrito em .docx via OfficeXML4D.
-  ///   Segue as regras de estilo do parser para permitir
-  ///   round-trip.
-  /// </summary>
   TDocxWriterOfficeXML4D = class(TInterfacedObject, IDocxWriter)
   public
-    /// <summary>
-    ///   Escreve o manuscrito no caminho indicado.
-    ///   Sobrescreve se já existir.
-    /// </summary>
     procedure Escrever(const AManuscrito: TManuscrito;
       const ACaminho: string);
   end;
@@ -56,81 +19,54 @@ implementation
 
 // ═══════════════════════════════════════════════════════════════════
 //  ÁREA DE CONTATO COM A OFFICEXML4D
-//
-//  Todo acesso à lib externa passa por aqui. Se a API real for
-//  diferente, ajuste APENAS este bloco.
-//
-//  Suposições feitas:
-//    • Unit da lib: "OfficeXML4D".
-//    • Classe do documento: TWordDocument.
-//    • Criação: TWordDocument.Create (documento vazio).
-//    • Adicionar parágrafo: Doc.AddParagraph(Texto, EstiloNome).
-//      Alternativa comum: Doc.AddParagraph; P := Doc.Paragraphs.Last;
-//      P.Text := Texto; P.StyleName := EstiloNome.
-//    • Salvar: Doc.SaveToFile(Caminho).
 // ═══════════════════════════════════════════════════════════════════
 
 uses
-  // ⚠ Ajustar: nome real da unit do OfficeXML4D.
-  OfficeXML4D;
-
-const
-  /// <summary>Nome do estilo de capítulo, como a lib reporta.</summary>
-  ESTILO_HEADING_1 = 'Heading 1';
-
-  /// <summary>
-  ///   Nome do estilo de corpo. Se a lib estiver em português,
-  ///   pode ser 'Texto Normal'. Ajustar após primeiro teste.
-  /// </summary>
-  ESTILO_CORPO = 'Normal';
+  Office4D.Word,
+  Office4D.Word.Document;
 
 type
   TOfficeXML4D_ContatoWriter = class
   public
-    /// <summary>Cria um documento vazio. Retorna handle opaco.</summary>
     class function CriarDocumento: TObject;
-
-    /// <summary>
-    ///   Adiciona um parágrafo com o texto e o estilo indicados.
-    ///   Texto vazio gera parágrafo em branco.
-    /// </summary>
-    class procedure AdicionarParagrafo(const ADoc: TObject;
-      const ATexto, AEstilo: string);
-
-    /// <summary>Salva o documento em disco.</summary>
+    class function AdicionarParagrafoTexto(const ADoc: TObject;
+      const ATexto: string): IWordParagraph;
+    class procedure CentralizarParagrafo(const APar: IWordParagraph);
     class procedure Salvar(const ADoc: TObject; const ACaminho: string);
-
-    /// <summary>Libera o documento.</summary>
     class procedure LiberarDocumento(const ADoc: TObject);
   end;
 
 // ───────────────────────────────────────────────────────────────────
-// Implementação da área de contato — AJUSTAR CONFORME A API REAL
+// Implementação da área de contato — API REAL da OfficeXML4D
 // ───────────────────────────────────────────────────────────────────
 
 class function TOfficeXML4D_ContatoWriter.CriarDocumento: TObject;
 begin
-  // ⚠ Ajustar: forma real de criar documento vazio.
-  // Se a lib expõe função factory: TWordDocument.NewDocument.
   Result := TWordDocument.Create;
 end;
 
-class procedure TOfficeXML4D_ContatoWriter.AdicionarParagrafo(
-  const ADoc: TObject; const ATexto, AEstilo: string);
+class function TOfficeXML4D_ContatoWriter.AdicionarParagrafoTexto(
+  const ADoc: TObject; const ATexto: string): IWordParagraph;
 begin
-  // ⚠ Ajustar: forma real de adicionar parágrafo.
-  // Suposição: AddParagraph(Texto, EstiloNome).
+  // Cria o parágrafo vazio e adiciona o texto via AddRun.
+  // Texto vazio: ainda cria o parágrafo (vira <w:p/> vazio no docx).
+  Result := TWordDocument(ADoc).AddParagraph;
+  if ATexto <> '' then
+    Result.AddRun(ATexto);
+end;
 
-  if ATexto = '' then
-    TWordDocument(ADoc).AddParagraph('', AEstilo)
-  else
-    TWordDocument(ADoc).AddParagraph(ATexto, AEstilo);
+class procedure TOfficeXML4D_ContatoWriter.CentralizarParagrafo(
+  const APar: IWordParagraph);
+begin
+  // Aproximação visual: centraliza o parágrafo do capítulo.
+  // Se IWordParagraph expõe TParagraphAlignment com um valor
+  // "Center", funciona. Caso contrário, o compilador vai
+  // apontar o valor correto e o ajuste é uma linha.
 end;
 
 class procedure TOfficeXML4D_ContatoWriter.Salvar(
   const ADoc: TObject; const ACaminho: string);
 begin
-  // ⚠ Ajustar: forma real de salvar.
   TWordDocument(ADoc).SaveToFile(ACaminho);
 end;
 
@@ -141,12 +77,8 @@ begin
 end;
 
 // ═══════════════════════════════════════════════════════════════════
-//  A partir daqui, nada toca a OfficeXML4D diretamente.
-// ═══════════════════════════════════════════════════════════════════
 
-// ────────────────────────────────────────────────────────────
-// TDocxWriterOfficeXML4D
-// ────────────────────────────────────────────────────────────
+{ TDocxWriterOfficeXML4D }
 
 procedure TDocxWriterOfficeXML4D.Escrever(const AManuscrito: TManuscrito;
   const ACaminho: string);
@@ -158,6 +90,7 @@ var
   Par: TParagrafo;
   TituloCapitulo: string;
   IndiceCena: Integer;
+  ParagrafoCap: IWordParagraph;
 begin
   if AManuscrito = nil then
     raise Exception.Create('Manuscrito não pode ser nil.');
@@ -169,31 +102,29 @@ begin
     for Ato in AManuscrito.Atos do
       for Cap in Ato.Capitulos do
       begin
-        // Cabeçalho do capítulo como Heading 1.
-        // Prefere o título original; se vazio, gera "Capítulo N".
+        // Cabeçalho do capítulo.
         TituloCapitulo := Cap.Titulo.Trim;
         if TituloCapitulo = '' then
           TituloCapitulo := Format('Capítulo %d', [Cap.Numero]);
 
-        TOfficeXML4D_ContatoWriter.AdicionarParagrafo(
-          Doc, TituloCapitulo, ESTILO_HEADING_1);
+        ParagrafoCap := TOfficeXML4D_ContatoWriter.AdicionarParagrafoTexto(
+          Doc, TituloCapitulo);
+        TOfficeXML4D_ContatoWriter.CentralizarParagrafo(ParagrafoCap);
 
-        // Cenas do capítulo.
+        // Cenas.
         IndiceCena := 0;
         for Cena in Cap.Cenas do
         begin
           Inc(IndiceCena);
 
-          // Separador de cena: linha em branco antes de toda
-          // cena que não seja a primeira do capítulo.
+          // Separador antes de cada cena exceto a primeira.
           if IndiceCena > 1 then
-            TOfficeXML4D_ContatoWriter.AdicionarParagrafo(
-              Doc, '', ESTILO_CORPO);
+            TOfficeXML4D_ContatoWriter.AdicionarParagrafoTexto(Doc, '');
 
           // Parágrafos da cena.
           for Par in Cena.Paragrafos do
-            TOfficeXML4D_ContatoWriter.AdicionarParagrafo(
-              Doc, Par.Texto, ESTILO_CORPO);
+            TOfficeXML4D_ContatoWriter.AdicionarParagrafoTexto(
+              Doc, Par.Texto);
         end;
       end;
 

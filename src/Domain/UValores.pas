@@ -184,6 +184,8 @@ const
   /// <summary>Frases de sobreposição entre chunks consecutivos (contexto de borda).</summary>
   SOBREPOSICAO_CHUNK_FRASES = 1;
 
+  VICIO_VARREDURA = '(varredura)';
+
 implementation
 
 // ────────────────────────────────────────────────────────────

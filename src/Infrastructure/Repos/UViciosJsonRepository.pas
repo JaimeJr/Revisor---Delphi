@@ -1,33 +1,5 @@
 ﻿unit UViciosJsonRepository;
 
-{
-  UViciosJsonRepository.pas
-  ─────────────────────────────────────────────────────────────
-  Persistência do Vicios.JSON — catálogo editorial vivo.
-
-  Características:
-    • Carregar: se o arquivo não existir, retorna catálogo vazio.
-    • GarantirSemente: cria o arquivo com as 15 categorias
-      iniciais se não existir. NÃO sobrescreve catálogo existente.
-    • Salvar: regrava o arquivo inteiro. Volume pequeno, rewrite
-      é adequado.
-
-  Sobre o catálogo semente:
-    • As 10 primeiras categorias foram propostas na arquitetura.
-    • As 5 últimas vieram do autor do manuscrito.
-    • Categorias de "ausência de detalhe" e "diálogo/subtexto"
-      não têm gatilho local — só a IA detecta, no modo varredura.
-      Isso é esperado: ausência não se detecta por regex.
-
-  Decisões:
-    • Enum OrigemVicio (generico/autor) preservado no JSON.
-    • Exemplos do manuscrito com cena_id, paragrafo_id, trecho,
-      id_chamada e timestamp.
-    • Versao incrementa a cada edição do catálogo.
-    • Escrita atômica, UTF-8 sem BOM, datas ISO 8601 UTC.
-  ─────────────────────────────────────────────────────────────
-}
-
 interface
 
 uses
@@ -287,6 +259,23 @@ end;
 procedure ConstruirSemente(const ACatalogo: TCatalogoVicios);
 begin
   // ─── Excesso / repetição ───
+  AdicionarVicio(ACatalogo,
+    'tricolon',
+    'Tricolon mecânico',
+    'Três elementos com a mesma estrutura gramatical em sequência ' +
+    '(três frases curtas com mesmo início, três substantivos em lista, ' +
+    'três negações seguidas, três orações com mesmo conector). ' +
+    'O problema não é o tricolon em si — é a densidade quando se ' +
+    'repete ao longo da cena, criando ritmo previsível.',
+    'Prefira REDUZIR de 3 para 2 elementos (preserva o ritmo curto ' +
+    'dos dois primeiros) ou FUNDIR em uma frase só (mantém a lista ' +
+    'mas elimina o martelamento). Só use SUBSTITUIR por ação física ' +
+    'específica quando o tricolon for de sensação genérica. ' +
+    'Nunca elimine todos: dosar, não extinguir.',
+    '3 frases curtas seguidas com prefixo gramatical idêntico ' +
+    '(mesmo sujeito+verbo ou mesmo conector), OU 3 substantivos em ' +
+    'lista com paralelismo, OU 3 negações seguidas.',
+    False);
 
   AdicionarVicio(ACatalogo,
     'anafora',
