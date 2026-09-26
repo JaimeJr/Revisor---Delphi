@@ -182,6 +182,15 @@ object frmPrincipal: TfrmPrincipal
         TabOrder = 1
         OnClick = BtnDesmarcarTodosClick
       end
+      object btnMarcarSuspeitos: TButton
+        Left = 344
+        Top = 4
+        Width = 121
+        Height = 26
+        Caption = 'Marcar Suspeitos'
+        TabOrder = 2
+        OnClick = btnMarcarSuspeitosClick
+      end
     end
     object pnlRodapeConteudo: TPanel
       Left = 0

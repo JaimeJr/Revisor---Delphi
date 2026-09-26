@@ -29,7 +29,7 @@ type
   TProcSimplesPrincipal = procedure of object;
 
   IPrincipalView = interface
-    ['{A1B2C3D4-0020-4000-8000-000000000001}']
+    ['{598676F6-75E1-4B1D-8718-0E93320BFB3F}']
 
     // ─── Consultas ───
     function CenaSelecionadaID: TID;
@@ -120,6 +120,14 @@ type
     procedure SetAoFechar(const Value: TProcSimplesPrincipal);
     property AoFechar: TProcSimplesPrincipal
       read GetAoFechar write SetAoFechar;
+
+    function GetAoMarcarSuspeitos: TProcSimplesPrincipal;
+    procedure SetAoMarcarSuspeitos(const Value: TProcSimplesPrincipal);
+    property AoMarcarSuspeitos: TProcSimplesPrincipal
+      read GetAoMarcarSuspeitos write SetAoMarcarSuspeitos;
+
+    function TotalSuspeitosNaCena: Integer;
+    procedure MarcarSuspeitos;
   end;
 
 implementation

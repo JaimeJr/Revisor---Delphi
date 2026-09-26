@@ -1,18 +1,5 @@
 ﻿unit UCompositionRoot;
 
-{
-  UCompositionRoot.pas
-  ─────────────────────────────────────────────────────────────
-  Raiz de composição da aplicação.
-
-  Nesta versão:
-    • O revisor NÃO recebe mais caminhos de Envio/Resposta —
-      eles vêm por TChamada.
-    • O revisor recebe apenas CaminhoVicios, que é fixo por
-      instalação e necessário para o prompt.
-  ─────────────────────────────────────────────────────────────
-}
-
 interface
 
 uses
@@ -43,6 +30,9 @@ uses
   UPromptFactory,
   UIRevisorIA,
   URevisorDeepSeek,
+  UIGatilhoLocal,
+  UGatilhoRegistry,
+  UGatilhoAnafora,
   UImportarManuscritoUseCase,
   UExportarManuscritoUseCase,
   URevisarCenaUseCase,
@@ -50,6 +40,7 @@ uses
   URecusarEdicaoUseCase,
   UMarcarRevisadoManualUseCase,
   UManterVicioUseCase,
+  UAvaliarGatilhosUseCase,
   UCommandStack,
   UPrincipalPresenter,
   UMediadorApp;
@@ -57,6 +48,7 @@ uses
 type
   TCompositionRoot = class
   private
+    // ─── Interfaces (ref-counted, não liberadas manualmente) ───
     FDocxReader: IDocxReader;
     FDocxWriter: IDocxWriter;
     FParser: IParserManuscrito;
@@ -68,7 +60,10 @@ type
     FCache: ICacheChamadas;
     FPromptFactory: IPromptFactory;
     FRevisor: IRevisorIA;
+    FGatilhoRegistry: IGatilhoRegistry;
+    FMediador: IMediadorApp;
 
+    // ─── Classes com ownership explícito ───
     FCommandStack: TCommandStack;
     FImportarUC: TImportarManuscritoUseCase;
     FExportarUC: TExportarManuscritoUseCase;
@@ -77,7 +72,7 @@ type
     FRecusarUC: TRecusarEdicaoUseCase;
     FMarcarRevisadoUC: TMarcarRevisadoManualUseCase;
     FManterVicioUC: TManterVicioUseCase;
-    FMediador: IMediadorApp;
+    FAvaliarGatilhosUC: TAvaliarGatilhosUseCase;
     FPresenter: TPrincipalPresenter;
   public
     constructor Create;
@@ -100,14 +95,14 @@ var
 begin
   inherited Create;
 
-  // ─── 1. Config ───
+  // ─── 1. Config (singleton, carrega chave do disco) ───
   Config := TConfigApp.Instancia;
 
   // ─── 2. Adaptadores .docx ───
   FDocxReader := TDocxReaderOfficeXML4D.Create;
   FDocxWriter := TDocxWriterOfficeXML4D.Create;
 
-  // ─── 3. Parser ───
+  // ─── 3. Parser de manuscrito ───
   FParser := TParserManuscrito.Create(FDocxReader,
     Config.LimiteParagrafoPalavras);
 
@@ -118,10 +113,10 @@ begin
   FRespostaRepo := TRespostaJsonRepository.Create;
   FViciosRepo := TViciosJsonRepository.Create;
 
-  // ─── 5. Cache ───
+  // ─── 5. Cache de chamadas ───
   FCache := TCacheMemoria.Create;
 
-  // ─── 6. Prompts ───
+  // ─── 6. Construtores de prompt ───
   FPromptFactory := TPromptFactory.Create;
 
   // ─── 7. Revisor IA ───
@@ -139,10 +134,16 @@ begin
     Config.PrecoInputPorMilhao,
     Config.PrecoOutputPorMilhao);
 
-  // ─── 8. Command stack ───
+  // ─── 8. Gatilhos locais ───
+  FGatilhoRegistry := TGatilhoRegistry.Create;
+  FGatilhoRegistry.Registrar(TGatilhoAnafora.Create);
+  // (registrar os demais gatilhos aqui conforme forem
+  //  implementados: adverbio_mente, adjetivacao_dupla, etc.)
+
+  // ─── 9. Command stack ───
   FCommandStack := TCommandStack.Create;
 
-  // ─── 9. UseCases ───
+  // ─── 10. UseCases ───
   FImportarUC := TImportarManuscritoUseCase.Create(
     FParser, FAntesRepo, FNovoRepo, FViciosRepo);
 
@@ -163,7 +164,10 @@ begin
 
   FManterVicioUC := TManterVicioUseCase.Create(FViciosRepo);
 
-  // ─── 10. Mediador ───
+  FAvaliarGatilhosUC := TAvaliarGatilhosUseCase.Create(
+    FGatilhoRegistry, FNovoRepo);
+
+  // ─── 11. Mediador ───
   FMediador := TMediadorApp.Create(
     FRevisarUC, FAceitarUC, FRecusarUC, FManterVicioUC, FViciosRepo);
 end;
@@ -179,7 +183,7 @@ begin
   if not Assigned(AView) then
     raise Exception.Create('TfrmPrincipal não pode ser nil.');
 
-    FPresenter := TPrincipalPresenter.Create(
+  FPresenter := TPrincipalPresenter.Create(
     AView,
     FMediador,
     FImportarUC,
@@ -191,7 +195,8 @@ begin
     FNovoRepo,
     FRespostaRepo,
     FViciosRepo,
-    FCommandStack);
+    FCommandStack,
+    FAvaliarGatilhosUC);
 
   FPresenter.Iniciar;
 end;
@@ -199,6 +204,13 @@ end;
 procedure TCompositionRoot.Finalizar;
 begin
   FreeAndNil(FPresenter);
+
+  // FMediador é interface — sai de escopo por ref counting.
+  // Não chamar FreeAndNil(FMediador) para não disparar
+  // EInvalidPointer (TInterfacedObject.Destroy verifica
+  // ref count != 0).
+
+  FreeAndNil(FAvaliarGatilhosUC);
   FreeAndNil(FManterVicioUC);
   FreeAndNil(FMarcarRevisadoUC);
   FreeAndNil(FRecusarUC);
@@ -207,6 +219,10 @@ begin
   FreeAndNil(FExportarUC);
   FreeAndNil(FImportarUC);
   FreeAndNil(FCommandStack);
+
+  // As interfaces restantes (repos, cache, prompt factory,
+  // revisor, registry) saem por ref count quando o
+  // CompositionRoot é liberado.
 end;
 
 end.

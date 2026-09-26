@@ -105,6 +105,8 @@
         <AppDPIAwarenessMode>PerMonitorV2</AppDPIAwarenessMode>
         <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
         <VerInfo_Locale>1033</VerInfo_Locale>
+        <DCC_Hints>false</DCC_Hints>
+        <DCC_Warnings>false</DCC_Warnings>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_1_Win64)'!=''">
         <AppDPIAwarenessMode>PerMonitorV2</AppDPIAwarenessMode>
@@ -200,8 +202,11 @@
         <DCCReference Include="src\Presentation\Presenters\UPrincipalPresenter.pas"/>
         <DCCReference Include="src\Presentation\Forms\frmLoading.pas">
             <Form>frmLoading</Form>
-            <FormType>dfm</FormType>
         </DCCReference>
+        <DCCReference Include="src\Domain\Contratos\UIGatilhoLocal.pas"/>
+        <DCCReference Include="src\Infrastructure\Gatilhos\UAvaliarGatilhosUseCase.pas"/>
+        <DCCReference Include="src\Infrastructure\Gatilhos\UGatilhoRegistry.pas"/>
+        <DCCReference Include="src\Infrastructure\Gatilhos\UGatilhoAnafora.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

@@ -1,34 +1,12 @@
 ﻿unit UGatilhoRegistry;
 
-{
-  UGatilhoRegistry.pas
-  ─────────────────────────────────────────────────────────────
-  Registro central de gatilhos locais.
-
-  Responsabilidades:
-    • Guardar os gatilhos registrados, sem duplicata de VicioID.
-    • Avaliar todos sobre um parágrafo, devolvendo só os que
-      dispararam, ordenados por confiança decrescente.
-    • Responder quais VicioIDs têm cobertura.
-
-  Decisões:
-    • Primeiro gatilho com um VicioID ganha. Registrar de novo
-      o mesmo ID é no-op, não erro — permite registro em lote
-      no CompositionRoot sem checagem prévia.
-    • Ordenação por confiança decrescente; em empate, mantém a
-      ordem de registro (estabilidade).
-    • Gatilhos que precisam de contexto são pulados se o
-      contexto for nil — não é erro, só não avalia.
-  ─────────────────────────────────────────────────────────────
-}
-
 interface
 
 uses
   System.SysUtils,
   System.Generics.Collections,
   System.Generics.Defaults,
-  UGatilhoLocal,
+  UIGatilhoLocal,
   UManuscrito,
   UValores;
 
@@ -36,30 +14,26 @@ type
   TGatilhoRegistry = class(TInterfacedObject, IGatilhoRegistry)
   private
     FGatilhos: TList<IGatilhoLocal>;
-    FIndicePorVicio: TDictionary<string, Integer>;
+    FIndicePorVicio: TDictionary<string, IGatilhoLocal>;
   public
     constructor Create;
     destructor Destroy; override;
 
     procedure Registrar(const AGatilho: IGatilhoLocal);
-
     function AvaliarTodos(const AParagrafo: TParagrafo;
       const AContexto: TContextoGlobal): TArray<TGatilhoResultado>;
-
     function ViciosCobertos: TArray<string>;
-
     function TemGatilhoPara(const AVicioID: string): Boolean;
+    function GatilhoPorVicio(const AVicioID: string): IGatilhoLocal;
   end;
 
 implementation
-
-{ TGatilhoRegistry }
 
 constructor TGatilhoRegistry.Create;
 begin
   inherited;
   FGatilhos := TList<IGatilhoLocal>.Create;
-  FIndicePorVicio := TDictionary<string, Integer>.Create;
+  FIndicePorVicio := TDictionary<string, IGatilhoLocal>.Create;
 end;
 
 destructor TGatilhoRegistry.Destroy;
@@ -80,11 +54,10 @@ begin
   if ID = '' then
     raise EValorInvalido.Create('Gatilho precisa ter VicioID.');
 
-  // Já existe? Ignora silenciosamente — primeiro ganha.
   if FIndicePorVicio.ContainsKey(ID) then
     Exit;
 
-  FIndicePorVicio.Add(ID, FGatilhos.Count);
+  FIndicePorVicio.Add(ID, AGatilho);
   FGatilhos.Add(AGatilho);
 end;
 
@@ -102,14 +75,11 @@ begin
   try
     for Gatilho in FGatilhos do
     begin
-      // Pula gatilhos que precisam de contexto quando ele não veio.
       if Gatilho.PrecisaContexto and not Assigned(AContexto) then
         Continue;
 
       R := Gatilho.Avaliar(AParagrafo, AContexto);
 
-      // Garante que o VicioID veio preenchido (responsabilidade
-      // do gatilho — defesa contra implementação esquecida).
       if R.VicioID = '' then
         R.VicioID := Gatilho.VicioID;
 
@@ -122,8 +92,6 @@ begin
     Lista.Free;
   end;
 
-  // Ordena por confiança decrescente. Em empate, mantém ordem
-  // de inserção (ordenamento estável do TArray.Sort).
   TArray.Sort<TGatilhoResultado>(Result,
     TComparer<TGatilhoResultado>.Construct(
       function(const A, B: TGatilhoResultado): Integer
@@ -140,7 +108,7 @@ end;
 function TGatilhoRegistry.ViciosCobertos: TArray<string>;
 var
   Lista: TList<string>;
-  Par: TPair<string, Integer>;
+  Par: TPair<string, IGatilhoLocal>;
 begin
   Lista := TList<string>.Create;
   try
@@ -155,6 +123,13 @@ end;
 function TGatilhoRegistry.TemGatilhoPara(const AVicioID: string): Boolean;
 begin
   Result := FIndicePorVicio.ContainsKey(AVicioID);
+end;
+
+function TGatilhoRegistry.GatilhoPorVicio(
+  const AVicioID: string): IGatilhoLocal;
+begin
+  if not FIndicePorVicio.TryGetValue(AVicioID, Result) then
+    Result := nil;
 end;
 
 end.

@@ -63,7 +63,11 @@ uses
   UIEnvioRepository in 'src\Domain\Contratos\UIEnvioRepository.pas',
   UIRespostaRepository in 'src\Domain\Contratos\UIRespostaRepository.pas',
   UPrincipalPresenter in 'src\Presentation\Presenters\UPrincipalPresenter.pas',
-  frmLoading in 'src\Presentation\Forms\frmLoading.pas' {frmLoading};
+  frmLoading in 'src\Presentation\Forms\frmLoading.pas' {frmLoading},
+  UIGatilhoLocal in 'src\Domain\Contratos\UIGatilhoLocal.pas',
+  UAvaliarGatilhosUseCase in 'src\Infrastructure\Gatilhos\UAvaliarGatilhosUseCase.pas',
+  UGatilhoRegistry in 'src\Infrastructure\Gatilhos\UGatilhoRegistry.pas',
+  UGatilhoAnafora in 'src\Infrastructure\Gatilhos\UGatilhoAnafora.pas';
 
 {$R *.res}
 
@@ -74,10 +78,9 @@ begin
     Application.Initialize;
     Application.MainFormOnTaskbar := True;
     Application.Title := 'Editor de Manuscrito';
-
     Root := TCompositionRoot.Create;
     try
-      Application.CreateForm(TFrmPrincipal, FormPrincipal);
+      Application.CreateForm(TfrmPrincipal, FormPrincipal);
       Root.Iniciar(FormPrincipal);
       Application.Run;
     finally

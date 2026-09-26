@@ -5,14 +5,9 @@
   ─────────────────────────────────────────────────────────────
   Tipos de dados que circulam entre Presenter e View.
 
-  São classes "burras" — só dados, sem lógica de negócio.
-  Nenhuma delas conhece VCL, HTTP, JSON ou repositórios.
-
-  Ownership:
-    • O Presenter cria e libera.
-    • A View consome durante a renderização.
-    • O Presenter nunca libera enquanto a View ainda pode
-      estar mostrando o objeto.
+  Nesta versão:
+    • TDisparoUI — resumo de um disparo de gatilho para a View.
+    • TParagrafoUI ganha Disparos[].
   ─────────────────────────────────────────────────────────────
 }
 
@@ -24,10 +19,6 @@ uses
   UValores;
 
 type
-  // ────────────────────────────────────────────────────────────
-  // Árvore principal
-  // ────────────────────────────────────────────────────────────
-
   TNoArvoreTipo = (naAto, naCapitulo, naCena);
 
   TNoArvoreUI = class
@@ -42,9 +33,12 @@ type
     destructor Destroy; override;
   end;
 
-  // ────────────────────────────────────────────────────────────
-  // Parágrafo na tela principal
-  // ────────────────────────────────────────────────────────────
+  TDisparoUI = class
+  public
+    GatilhoID: string;
+    Confianca: Double;
+    Trechos: TArray<string>;
+  end;
 
   TParagrafoUI = class
   public
@@ -53,14 +47,17 @@ type
     Texto: string;
     HashParagrafo: string;
     Status: TStatusParagrafo;
-    VicioMarcado: string;   // vazio = nenhum
+    VicioMarcado: string;
     NumChunks: Integer;
-    function EhGrande: Boolean;
-  end;
+    Disparos: TObjectList<TDisparoUI>;
 
-  // ────────────────────────────────────────────────────────────
-  // Resumo do parse (barra de status)
-  // ────────────────────────────────────────────────────────────
+    constructor Create;
+    destructor Destroy; override;
+
+    function EhGrande: Boolean;
+    function TemDisparo: Boolean;
+    function ResumoDisparos: string;
+  end;
 
   TResumoUI = class
   public
@@ -74,21 +71,17 @@ type
     function TextoFormatado: string;
   end;
 
-  // ────────────────────────────────────────────────────────────
-  // Tela de revisão
-  // ────────────────────────────────────────────────────────────
-
   TEdicaoUI = class
   public
-    Chave: string;              // estável: paragrafo|chunk|vicio
+    Chave: string;
     ParagrafoID: TID;
     ChunkIndex: Integer;
     VicioID: string;
-    NomeVicio: string;          // resolvido do catálogo
-    TextoAntigo: string;        // resolvido do Envio.JSON
+    NomeVicio: string;
+    TextoAntigo: string;
     TextoSugerido: string;
     Motivo: string;
-    DentroEscopo: Boolean;      // false → não pode ser aceita
+    DentroEscopo: Boolean;
     Selecionada: Boolean;
     Aplicada: Boolean;
   end;
@@ -105,7 +98,7 @@ type
     TokensPrompt: Integer;
     TokensResposta: Integer;
     CustoEstimado: Double;
-    Observacao: string;         // observação usada no reenvio, se houver
+    Observacao: string;
     Edicoes: TObjectList<TEdicaoUI>;
 
     constructor Create;
@@ -113,23 +106,6 @@ type
 
     function TemEdicoesAplicaveis: Boolean;
     function TotalAplicaveis: Integer;
-  end;
-
-  // ────────────────────────────────────────────────────────────
-  // Catálogo de vícios
-  // ────────────────────────────────────────────────────────────
-
-  TVicioUI = class
-  public
-    ID: string;
-    Nome: string;
-    Origem: TOrigemVicio;
-    Descricao: string;
-    DicaCorrecao: string;
-    GatilhoLocal: string;
-    PrecisaCrossCena: Boolean;
-    FrequenciaNoManuscrito: Integer;
-    function EhGenerico: Boolean;
   end;
 
   TCenaUI = class
@@ -149,6 +125,19 @@ type
     Cenas: TObjectList<TCenaUI>;
     constructor Create;
     destructor Destroy; override;
+  end;
+
+  TVicioUI = class
+  public
+    ID: string;
+    Nome: string;
+    Origem: TOrigemVicio;
+    Descricao: string;
+    DicaCorrecao: string;
+    GatilhoLocal: string;
+    PrecisaCrossCena: Boolean;
+    FrequenciaNoManuscrito: Integer;
+    function EhGenerico: Boolean;
   end;
 
 implementation
@@ -173,9 +162,45 @@ end;
 
 { TParagrafoUI }
 
+constructor TParagrafoUI.Create;
+begin
+  inherited;
+  Disparos := TObjectList<TDisparoUI>.Create;
+end;
+
+destructor TParagrafoUI.Destroy;
+begin
+  Disparos.Free;
+  inherited;
+end;
+
 function TParagrafoUI.EhGrande: Boolean;
 begin
   Result := NumChunks > 1;
+end;
+
+function TParagrafoUI.TemDisparo: Boolean;
+begin
+  Result := Disparos.Count > 0;
+end;
+
+function TParagrafoUI.ResumoDisparos: string;
+var
+  D: TDisparoUI;
+  Lista: TStringBuilder;
+begin
+  Lista := TStringBuilder.Create;
+  try
+    for D in Disparos do
+    begin
+      if Lista.Length > 0 then
+        Lista.Append(', ');
+      Lista.Append(D.GatilhoID);
+    end;
+    Result := Lista.ToString;
+  finally
+    Lista.Free;
+  end;
 end;
 
 { TResumoUI }
@@ -218,13 +243,6 @@ begin
       Inc(Result);
 end;
 
-{ TVicioUI }
-
-function TVicioUI.EhGenerico: Boolean;
-begin
-  Result := Origem = ovGenerico;
-end;
-
 { TCenaUI }
 
 constructor TCenaUI.Create;
@@ -239,6 +257,8 @@ begin
   inherited;
 end;
 
+{ TCapituloUI }
+
 constructor TCapituloUI.Create;
 begin
   inherited;
@@ -249,6 +269,13 @@ destructor TCapituloUI.Destroy;
 begin
   Cenas.Free;
   inherited;
+end;
+
+{ TVicioUI }
+
+function TVicioUI.EhGenerico: Boolean;
+begin
+  Result := Origem = ovGenerico;
 end;
 
 end.

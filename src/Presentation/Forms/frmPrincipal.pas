@@ -1,26 +1,5 @@
 ﻿unit frmPrincipal;
 
-{
-  frmPrincipal.pas
-  ─────────────────────────────────────────────────────────────
-  Tela principal — Layout D simplificado.
-
-  Painel direito mostra UMA cena por vez:
-    • Título "Cap. N — Cena M"
-    • Botões "Marcar todos" / "Desmarcar todos"
-    • Lista de parágrafos com checkbox, ID, texto e status.
-
-  Scroll:
-    • Os painéis de parágrafo são posicionados MANUALMENTE
-      (Top acumulado + Width calculada), sem Align.
-    • Controles com Align dentro de TScrollBox impedem o
-      Windows de calcular a área rolável — daí o posicionamento
-      manual.
-    • O handler ScrollParagrafosResize redistribui os painéis
-      quando a largura do scrollbox muda.
-  ─────────────────────────────────────────────────────────────
-}
-
 interface
 
 uses
@@ -51,6 +30,7 @@ type
     LabelID: TLabel;
     LabelTexto: TLabel;
     LabelStatus: TLabel;
+    Disparo: TDisparoUI;
     Owner: TfrmPrincipal;
     procedure CheckBoxClick(Sender: TObject);
   end;
@@ -84,6 +64,7 @@ type
 
     dlgAbrirDocx: TOpenDialog;
     dlgSalvarDocx: TSaveDialog;
+    btnMarcarSuspeitos: TButton;
 
     procedure FormCreate(Sender: TObject);
     procedure FormClose(Sender: TObject; var Action: TCloseAction);
@@ -99,6 +80,7 @@ type
     procedure TreeEstruturaChange(Sender: TObject; Node: TTreeNode);
     procedure CmbVicioChange(Sender: TObject);
     procedure ScrollParagrafosResize(Sender: TObject);
+    procedure btnMarcarSuspeitosClick(Sender: TObject);
   private
     FCenaAtual: TID;
     FParagrafos: TObjectList<TPainelParagrafoUI>;
@@ -114,6 +96,7 @@ type
     FAoMarcarRevisados: TProcSimplesPrincipal;
     FAoClicarDesfazer: TProcSimplesPrincipal;
     FAoFechar: TProcSimplesPrincipal;
+    FAoMarcarSuspeitos: TProcSimplesPrincipal;
 
     procedure LimparParagrafos;
     function CorDoStatus(const AStatus: TStatusParagrafo): TColor;
@@ -131,6 +114,9 @@ type
       const AMotivo: string);
     function MedirAlturaTexto(const ATexto: string; const ALargura: Integer;
       const AFont: TFont): Integer;
+    function GetAoMarcarSuspeitos: TProcSimplesPrincipal;
+    procedure SetAoMarcarSuspeitos(const Value: TProcSimplesPrincipal);
+    procedure AtualizarBotaoSuspeitos;
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -220,6 +206,8 @@ type
     property AoFechar: TProcSimplesPrincipal
       read GetAoFechar write SetAoFechar;
 
+    function TotalSuspeitosNaCena: Integer;
+    procedure MarcarSuspeitos;
     function QueryInterface(const IID: TGUID; out Obj): HResult; stdcall;
     function _AddRef: Integer; stdcall;
     function _Release: Integer; stdcall;
@@ -314,6 +302,12 @@ begin if Assigned(FAoRevisar) then FAoRevisar(); end;
 
 procedure TfrmPrincipal.BtnMarcarRevisadosClick(Sender: TObject);
 begin if Assigned(FAoMarcarRevisados) then FAoMarcarRevisados(); end;
+
+procedure TfrmPrincipal.btnMarcarSuspeitosClick(Sender: TObject);
+begin
+  if Assigned(FAoMarcarSuspeitos) then
+    FAoMarcarSuspeitos();
+end;
 
 procedure TfrmPrincipal.BtnDesfazerClick(Sender: TObject);
 begin if Assigned(FAoClicarDesfazer) then FAoClicarDesfazer(); end;
@@ -485,8 +479,55 @@ begin
   FCenaAtual := '';
   lblTituloCena.Caption := '';
   lblContador.Caption := '';
+
+  AtualizarBotaoSuspeitos;
 end;
 
+procedure TfrmPrincipal.AtualizarBotaoSuspeitos;
+var
+  Total: Integer;
+begin
+  Total := TotalSuspeitosNaCena;
+  btnMarcarSuspeitos.Enabled := Total > 0;
+  if Total > 0 then
+    btnMarcarSuspeitos.Caption := Format('Marcar suspeitos (%d)', [Total])
+  else
+    btnMarcarSuspeitos.Caption := 'Marcar suspeitos';
+end;
+
+function TfrmPrincipal.TotalSuspeitosNaCena: Integer;
+var
+  Par: TPainelParagrafoUI;
+begin
+  Result := 0;
+  for Par in FParagrafos do
+    if Assigned(Par.Disparo) then
+      Inc(Result);
+end;
+
+procedure TfrmPrincipal.MarcarSuspeitos;
+var
+  Par: TPainelParagrafoUI;
+  Alterou: Boolean;
+begin
+  Alterou := False;
+
+  for Par in FParagrafos do
+    if Assigned(Par. Disparo) and not Par.CheckBox.Checked then
+    begin
+      Par.CheckBox.Checked := True;
+      Alterou := True;
+    end;
+
+  if Alterou then
+  begin
+    AtualizarContador;
+    if Assigned(FAoMarcarParagrafo) then
+      FAoMarcarParagrafo('', True);  // mesmo padrão do "Marcar todos"
+  end;
+
+  AtualizarBotaoSuspeitos;
+end;
 function TfrmPrincipal.MedirAlturaTexto(const ATexto: string;
   const ALargura: Integer; const AFont: TFont): Integer;
 var
@@ -514,6 +555,7 @@ var
   LblStatus: TLabel;
   Wrap: TPainelParagrafoUI;
   LarguraTexto, AlturaTexto: Integer;
+  CorTexto: TColor;
 begin
   // ─── Painel da linha — posicionamento manual ───
   // Sem Align: o TScrollBox nativo do Windows precisa ver o
@@ -582,7 +624,12 @@ begin
   lblTexto.Margins.Left := 10;
   LblTexto.Caption := APar.Texto;
   LblTexto.Font.Assign(Self.Font);
-  LblTexto.Font.Color := CorDoStatus(APar.Status);
+  if APar.TemDisparo then
+    CorTexto := clRed
+  else
+    CorTexto := CorDoStatus(APar.Status);
+
+  LblTexto.Font.Color := CorTexto;
 
   // Altura do painel: o maior entre o texto e o status.
   Pnl.Height := AlturaTexto + 8;
@@ -597,6 +644,9 @@ begin
   Wrap.LabelID := LblID;
   Wrap.LabelTexto := LblTexto;
   Wrap.LabelStatus := LblStatus;
+  Wrap.Disparo := nil;
+  if APar.Disparos.Count > 0 then
+    Wrap.Disparo := APar.Disparos[0];
   Wrap.Owner := Self;
   Chk.OnClick := Wrap.CheckBoxClick;
 
@@ -668,6 +718,7 @@ begin
   end;
 
   AtualizarContador;
+  AtualizarBotaoSuspeitos;
 end;
 
 procedure TfrmPrincipal.PopularComboVicios(const AVicios: TArray<string>);
@@ -687,6 +738,8 @@ begin
 
   if Assigned(FAoSelecionarVicio) then
     FAoSelecionarVicio();
+
+  AtualizarBotaoSuspeitos;
 end;
 
 // ────────────────────────────────────────────────────────────
@@ -963,6 +1016,17 @@ begin
     Result := S_OK
   else
     Result := E_NOINTERFACE;
+end;
+
+function TfrmPrincipal.GetAoMarcarSuspeitos: TProcSimplesPrincipal;
+begin
+  Result := FAoMarcarSuspeitos;
+end;
+
+procedure TfrmPrincipal.SetAoMarcarSuspeitos(
+  const Value: TProcSimplesPrincipal);
+begin
+  FAoMarcarSuspeitos := Value;
 end;
 
 function TfrmPrincipal._AddRef: Integer;

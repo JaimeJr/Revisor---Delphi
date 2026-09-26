@@ -39,6 +39,7 @@ uses
   UEdicaoSugerida,
   UAnomaliaParse,
   UTiposUI,
+  UAvaliarGatilhosUseCase,
   UValores;
 
 type
@@ -46,6 +47,7 @@ type
   private
     FView: IPrincipalView;
     FMediador: IMediadorApp;
+    FAvaliarGatilhosUC: TAvaliarGatilhosUseCase;
 
     FImportarUC: TImportarManuscritoUseCase;
     FExportarUC: TExportarManuscritoUseCase;
@@ -114,6 +116,7 @@ type
 
     procedure LimparSessao;
     procedure EncerrarSessaoAtual;
+    procedure OnMarcarSuspeitos;
   public
     constructor Create(const AView: IPrincipalView;
       const AMediador: IMediadorApp;
@@ -126,7 +129,8 @@ type
       const ANovoRepo: INovoRepository;
       const ARespostaRepo: IRespostaRepository;
       const AViciosRepo: IViciosRepository;
-      const ACommandStack: TCommandStack);
+      const ACommandStack: TCommandStack;
+      const AAvaliarGatilhosUC: TAvaliarGatilhosUseCase);
 
     destructor Destroy; override;
 
@@ -151,7 +155,8 @@ constructor TPrincipalPresenter.Create(const AView: IPrincipalView;
   const ANovoRepo: INovoRepository;
   const ARespostaRepo: IRespostaRepository;
   const AViciosRepo: IViciosRepository;
-  const ACommandStack: TCommandStack);
+  const ACommandStack: TCommandStack;
+  const AAvaliarGatilhosUC: TAvaliarGatilhosUseCase);
 begin
   inherited Create;
 
@@ -192,6 +197,7 @@ begin
   FRespostaRepo := ARespostaRepo;
   FViciosRepo := AViciosRepo;
   FCommandStack := ACommandStack;
+  FAvaliarGatilhosUC := AAvaliarGatilhosUC;
 
   FCenaSelecionadaAtual := '';
   FModoAtual := meCirurgico;
@@ -216,6 +222,7 @@ begin
   FView.AoClicarDesfazer := OnDesfazer;
   FView.AoMarcarRevisados := OnMarcarRevisados;
   FView.AoFechar := OnFechar;
+  FView.AoMarcarSuspeitos := OnMarcarSuspeitos;
 
   FView.AtualizarTitulo('(nenhum manuscrito)');
   FView.LimparArvore;
@@ -433,6 +440,7 @@ procedure TPrincipalPresenter.OnSelecionarCena(const ACenaID: TID);
 var
   Cena: TCena;
   CenaUI: TCenaUI;
+  Alteracoes: Integer;
 begin
   if FManuscrito = nil then
     Exit;
@@ -443,12 +451,23 @@ begin
 
   FCenaSelecionadaAtual := ACenaID;
 
+  try
+    Alteracoes := FAvaliarGatilhosUC.Executar(
+      FManuscrito, FCaminhoNovo, [ACenaID]);
+  except
+    Alteracoes := 0;
+  end;
+
   CenaUI := ConstruirCenaUI(Cena);
   try
     FView.ExibirCena(CenaUI, TituloDaCena(Cena));
   finally
     CenaUI.Free;
   end;
+
+  if Alteracoes > 0 then
+    FView.AtualizarBarraStatus(Format(
+      '%d disparo(s) de gatilho detectado(s) nesta cena.', [Alteracoes]));
 
   AtualizarBotoes;
 end;
@@ -620,6 +639,11 @@ begin
   AtualizarBotoes;
   FView.AtualizarBarraStatus(Format('%d parágrafo(s) alterado(s).',
     [Alterados]));
+end;
+
+procedure TPrincipalPresenter.OnMarcarSuspeitos;
+begin
+  FView.MarcarSuspeitos;
 end;
 
 procedure TPrincipalPresenter.OnFechar;
@@ -829,6 +853,8 @@ function TPrincipalPresenter.ConstruirCenaUI(const ACena: TCena): TCenaUI;
 var
   Par: TParagrafo;
   ParUI: TParagrafoUI;
+  Disp: TDisparoGatilho;
+  DispUI: TDisparoUI;
 begin
   Result := TCenaUI.Create;
   Result.CenaID := ACena.ID;
@@ -844,6 +870,17 @@ begin
     ParUI.Status := Par.Status;
     ParUI.NumChunks := Par.NumChunks;
     ParUI.VicioMarcado := '';
+
+    // ⚠ Este bloco é o que faltava
+    for Disp in Par.GatilhosDisparados do
+    begin
+      DispUI := TDisparoUI.Create;
+      DispUI.GatilhoID := Disp.GatilhoID;
+      DispUI.Confianca := Disp.Confianca;
+      DispUI.Trechos := Disp.Trechos;
+      ParUI.Disparos.Add(DispUI);
+    end;
+
     Result.Paragrafos.Add(ParUI);
   end;
 end;

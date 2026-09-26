@@ -5,26 +5,9 @@
   ─────────────────────────────────────────────────────────────
   Persistência do Novo.JSON — estado de trabalho da sessão.
 
-  Diferenças em relação ao Antes.JSON:
-    • Cada parágrafo carrega campos de edição:
-        texto_original, status, revisoes[]
-    • Não guarda arquivo_origem nem hash_arquivo (esses vivem
-      só no Antes). Guarda baseado_em_hash_arquivo para
-      detectar se o Antes original foi substituído.
-    • Carregar retorna nil se o arquivo não existir — o Novo
-      pode começar vazio numa sessão nova.
-    • SalvarAuto é a operação principal (autosave a cada
-      operação). Sobrescreve sempre.
-    • Apagar descarta a sessão de trabalho.
-
-  Decisões (iguais ao Antes):
-    • Datas em ISO 8601 UTC.
-    • Enums em string minúscula.
-    • Escrita atômica.
-    • UTF-8 sem BOM.
-    • Duplicação controlada dos helpers de serialização
-      (não compartilhados com o Antes, para permitir evolução
-      independente).
+  Nesta versão:
+    • Cada parágrafo carrega gatilhos_disparados[], uma lista
+      de disparos de gatilhos locais.
   ─────────────────────────────────────────────────────────────
 }
 
@@ -39,11 +22,8 @@ type
   public
     procedure SalvarAuto(const AManuscrito: TManuscrito;
       const ACaminho: string);
-
     function Carregar(const ACaminho: string): TManuscrito;
-
     function Existe(const ACaminho: string): Boolean;
-
     procedure Apagar(const ACaminho: string);
   end;
 
@@ -54,7 +34,6 @@ uses
   System.Classes,
   System.IOUtils,
   System.DateUtils,
-  System.TimeSpan,
   System.JSON,
   UValores;
 
@@ -62,7 +41,7 @@ const
   VERSAO_SCHEMA_NOVO = 1;
 
 // ────────────────────────────────────────────────────────────
-// Utilitários internos
+// Utilitários
 // ────────────────────────────────────────────────────────────
 
 function DataHoraParaISO(const AData: TDateTime): string;
@@ -104,12 +83,9 @@ var
   Temp: string;
 begin
   Temp := ACaminho + '.tmp';
-
   TFile.WriteAllText(Temp, AConteudo, TEncoding.UTF8);
-
   if TFile.Exists(ACaminho) then
     TFile.Delete(ACaminho);
-
   TFile.Move(Temp, ACaminho);
 end;
 
@@ -121,7 +97,7 @@ begin
 end;
 
 // ────────────────────────────────────────────────────────────
-// Serialização: RevisaoParagrafo → JSON
+// Serialização: RevisaoParagrafo
 // ────────────────────────────────────────────────────────────
 
 function RevisaoParaJson(const ARev: TRevisaoParagrafo): TJSONObject;
@@ -145,13 +121,67 @@ begin
 end;
 
 // ────────────────────────────────────────────────────────────
-// Serialização: Manuscrito → JSON (com campos de edição)
+// Serialização: DisparoGatilho
+// ────────────────────────────────────────────────────────────
+
+function DisparoParaJson(const ADisp: TDisparoGatilho): TJSONObject;
+var
+  ArranjoTrechos: TJSONArray;
+  T: string;
+begin
+  Result := TJSONObject.Create;
+  Result.AddPair('gatilho_id', ADisp.GatilhoID);
+  Result.AddPair('versao_gatilho', ADisp.VersaoGatilho);
+  Result.AddPair('confianca', TJSONNumber.Create(ADisp.Confianca));
+
+  ArranjoTrechos := TJSONArray.Create;
+  for T in ADisp.Trechos do
+    ArranjoTrechos.Add(T);
+  Result.AddPair('trechos', ArranjoTrechos);
+
+  Result.AddPair('hash_paragrafo_no_disparo',
+    ADisp.HashParagrafoNoDisparo);
+  Result.AddPair('quando', DataHoraParaISO(ADisp.Quando));
+end;
+
+function JsonParaDisparo(const AObj: TJSONObject): TDisparoGatilho;
+var
+  Arranjo: TJSONArray;
+  I: Integer;
+  Trechos: TArray<string>;
+begin
+  Result := TDisparoGatilho.Create;
+  try
+    Result.GatilhoID := AObj.GetValue<string>('gatilho_id');
+    Result.VersaoGatilho := AObj.GetValue<string>('versao_gatilho');
+    Result.Confianca := AObj.GetValue<Double>('confianca');
+
+    if AObj.TryGetValue<TJSONArray>('trechos', Arranjo) then
+    begin
+      SetLength(Trechos, Arranjo.Count);
+      for I := 0 to Arranjo.Count - 1 do
+        Trechos[I] := Arranjo.Items[I].Value;
+      Result.Trechos := Trechos;
+    end;
+
+    Result.HashParagrafoNoDisparo :=
+      AObj.GetValue<string>('hash_paragrafo_no_disparo');
+    Result.Quando := ISOParaDataHora(AObj.GetValue<string>('quando'));
+  except
+    Result.Free;
+    raise;
+  end;
+end;
+
+// ────────────────────────────────────────────────────────────
+// Serialização: Manuscrito
 // ────────────────────────────────────────────────────────────
 
 function ParagrafoParaJson(const APar: TParagrafo): TJSONObject;
 var
-  ArranjoRev: TJSONArray;
+  ArranjoRev, ArranjoDisp: TJSONArray;
   Rev: TRevisaoParagrafo;
+  Disp: TDisparoGatilho;
 begin
   Result := TJSONObject.Create;
   Result.AddPair('id', APar.ID);
@@ -166,8 +196,12 @@ begin
   ArranjoRev := TJSONArray.Create;
   for Rev in APar.Revisoes do
     ArranjoRev.AddElement(RevisaoParaJson(Rev));
-
   Result.AddPair('revisoes', ArranjoRev);
+
+  ArranjoDisp := TJSONArray.Create;
+  for Disp in APar.GatilhosDisparados do
+    ArranjoDisp.AddElement(DisparoParaJson(Disp));
+  Result.AddPair('gatilhos_disparados', ArranjoDisp);
 end;
 
 function CenaParaJson(const ACena: TCena): TJSONObject;
@@ -238,12 +272,12 @@ begin
 end;
 
 // ────────────────────────────────────────────────────────────
-// Desserialização: JSON → Manuscrito
+// Desserialização
 // ────────────────────────────────────────────────────────────
 
 function JsonParaParagrafo(const AObj: TJSONObject): TParagrafo;
 var
-  Arranjo: TJSONArray;
+  ArranjoRev, ArranjoDisp: TJSONArray;
   I: Integer;
 begin
   Result := TParagrafo.Create;
@@ -258,10 +292,15 @@ begin
     Result.Status := TStatusParagrafo.FromStr(
       AObj.GetValue<string>('status'));
 
-    Arranjo := AObj.GetValue<TJSONArray>('revisoes');
-    for I := 0 to Arranjo.Count - 1 do
-      Result.Revisoes.Add(
-        JsonParaRevisao(Arranjo.Items[I] as TJSONObject));
+    if AObj.TryGetValue<TJSONArray>('revisoes', ArranjoRev) then
+      for I := 0 to ArranjoRev.Count - 1 do
+        Result.Revisoes.Add(
+          JsonParaRevisao(ArranjoRev.Items[I] as TJSONObject));
+
+    if AObj.TryGetValue<TJSONArray>('gatilhos_disparados', ArranjoDisp) then
+      for I := 0 to ArranjoDisp.Count - 1 do
+        Result.GatilhosDisparados.Add(
+          JsonParaDisparo(ArranjoDisp.Items[I] as TJSONObject));
   except
     Result.Free;
     raise;
@@ -347,7 +386,6 @@ begin
     Result.GeradoEm := ISOParaDataHora(AObj.GetValue<string>('atualizado_em'));
     Result.HashArquivo := AObj.GetValue<string>('baseado_em_hash_arquivo');
     Result.Titulo := AObj.GetValue<string>('titulo');
-    // ArquivoOrigem não existe no Novo — fica vazio de propósito.
 
     Arranjo := AObj.GetValue<TJSONArray>('atos');
     for I := 0 to Arranjo.Count - 1 do
@@ -387,7 +425,6 @@ var
   Texto: string;
   Valor: TJSONValue;
 begin
-  // Diferença em relação ao Antes: Novo pode não existir.
   if not TFile.Exists(ACaminho) then
     Exit(nil);
 

@@ -4,18 +4,13 @@
   UManuscrito.pas
   ─────────────────────────────────────────────────────────────
   Entidades do domínio que representam a estrutura de um
-  manuscrito: Parágrafo, Cena, Capítulo, Ato, Manuscrito.
+  manuscrito.
 
-  Regras:
-    • Apenas composição via TObjectList<T> (ownership explícito).
-    • Nenhuma lógica de I/O, HTTP, VCL ou JSON.
-    • TManuscrito é usado tanto para Antes.JSON quanto para
-      Novo.JSON. Os campos de edição (TextoOriginal, Status,
-      Revisoes) só são populados no Novo.JSON; no Antes ficam
-      com valores default.
-    • IDs seguem o formato definido em UValores (TID).
-    • Toda navegação é linear — a árvore tem no máximo ~900
-      parágrafos, e busca linear é mais que suficiente.
+  Nesta versão:
+    • TDisparoGatilho (VO) — registro de um gatilho local
+      que disparou sobre um parágrafo.
+    • TParagrafo ganha uma lista de disparos, persistida
+      apenas no Novo.JSON.
   ─────────────────────────────────────────────────────────────
 }
 
@@ -27,68 +22,40 @@ uses
   UValores;
 
 type
+  TDisparoGatilho = class;
   TRevisaoParagrafo = class;
 
   // ────────────────────────────────────────────────────────────
-  // Parágrafo
+  // Disparo de gatilho (VO)
   // ────────────────────────────────────────────────────────────
 
   /// <summary>
-  ///   Menor unidade do manuscrito. Corresponde a um parágrafo
-  ///   de "Texto Normal" no .docx.
+  ///   Registro de um disparo de gatilho local sobre um parágrafo.
+  ///   Persistido em Novo.JSON por par (parágrafo, gatilho).
   /// </summary>
-  TParagrafo = class
+  TDisparoGatilho = class
   private
-    FID: TID;
-    FOrdem: Integer;
-    FTexto: string;
-    FHash: string;
-    FNumPalavras: Integer;
-    FNumChunks: Integer;
-
-    // Campos de edição — só usados no Novo.JSON
-    FTextoOriginal: string;
-    FStatus: TStatusParagrafo;
-    FRevisoes: TObjectList<TRevisaoParagrafo>;
+    FGatilhoID: string;
+    FVersaoGatilho: string;
+    FConfianca: Double;
+    FTrechos: TArray<string>;
+    FHashParagrafoNoDisparo: string;
+    FQuando: TDateTime;
   public
-    constructor Create;
-    destructor Destroy; override;
-
-    property ID: TID read FID write FID;
-    property Ordem: Integer read FOrdem write FOrdem;
-    property Texto: string read FTexto write FTexto;
-    property Hash: string read FHash write FHash;
-    property NumPalavras: Integer read FNumPalavras write FNumPalavras;
-    property NumChunks: Integer read FNumChunks write FNumChunks;
-
-    property TextoOriginal: string read FTextoOriginal write FTextoOriginal;
-    property Status: TStatusParagrafo read FStatus write FStatus;
-    property Revisoes: TObjectList<TRevisaoParagrafo> read FRevisoes;
-
-    /// <summary>True se o parágrafo excede LIMITE_PARAGRAFO_PALAVRAS.</summary>
-    function EhGrande: Boolean;
-
-    /// <summary>Adiciona uma entrada de revisão ao histórico.</summary>
-    procedure AdicionarRevisao(const ARevisao: TRevisaoParagrafo);
-
-    /// <summary>
-    ///   True se já existe uma revisão registrada para o par
-    ///   (texto atual + vício). Usado para alertar "já revisado".
-    /// </summary>
-    function JaRevisado(const AVicioID, AHashParagrafo: string): Boolean;
-
-    /// <summary>Marca o parágrafo como revisado manualmente pelo usuário.</summary>
-    procedure MarcarRevisadoManual;
+    property GatilhoID: string read FGatilhoID write FGatilhoID;
+    property VersaoGatilho: string
+      read FVersaoGatilho write FVersaoGatilho;
+    property Confianca: Double read FConfianca write FConfianca;
+    property Trechos: TArray<string> read FTrechos write FTrechos;
+    property HashParagrafoNoDisparo: string
+      read FHashParagrafoNoDisparo write FHashParagrafoNoDisparo;
+    property Quando: TDateTime read FQuando write FQuando;
   end;
 
   // ────────────────────────────────────────────────────────────
-  // Revisão de parágrafo (VO)
+  // Revisão de parágrafo (VO) — já existia
   // ────────────────────────────────────────────────────────────
 
-  /// <summary>
-  ///   Registro histórico de uma revisão aplicada (ou recusada)
-  ///   sobre um parágrafo. Persistido em Novo.JSON.revisoes[].
-  /// </summary>
   TRevisaoParagrafo = class
   private
     FIDChamada: string;
@@ -106,7 +73,81 @@ type
   end;
 
   // ────────────────────────────────────────────────────────────
-  // Cena
+  // Parágrafo
+  // ────────────────────────────────────────────────────────────
+
+  TParagrafo = class
+  private
+    FID: TID;
+    FOrdem: Integer;
+    FTexto: string;
+    FHash: string;
+    FNumPalavras: Integer;
+    FNumChunks: Integer;
+
+    FTextoOriginal: string;
+    FStatus: TStatusParagrafo;
+    FRevisoes: TObjectList<TRevisaoParagrafo>;
+    FGatilhosDisparados: TObjectList<TDisparoGatilho>;
+  public
+    constructor Create;
+    destructor Destroy; override;
+
+    property ID: TID read FID write FID;
+    property Ordem: Integer read FOrdem write FOrdem;
+    property Texto: string read FTexto write FTexto;
+    property Hash: string read FHash write FHash;
+    property NumPalavras: Integer read FNumPalavras write FNumPalavras;
+    property NumChunks: Integer read FNumChunks write FNumChunks;
+
+    property TextoOriginal: string read FTextoOriginal write FTextoOriginal;
+    property Status: TStatusParagrafo read FStatus write FStatus;
+    property Revisoes: TObjectList<TRevisaoParagrafo> read FRevisoes;
+    property GatilhosDisparados: TObjectList<TDisparoGatilho>
+      read FGatilhosDisparados;
+
+    function EhGrande: Boolean;
+
+    procedure AdicionarRevisao(const ARevisao: TRevisaoParagrafo);
+    function JaRevisado(const AVicioID, AHashParagrafo: string): Boolean;
+    procedure MarcarRevisadoManual;
+
+    // ─── Gatilhos ───
+
+    /// <summary>
+    ///   True se existe pelo menos um gatilho disparado.
+    /// </summary>
+    function TemDisparo: Boolean;
+
+    /// <summary>
+    ///   True se o gatilho indicado já disparou sobre este
+    ///   parágrafo. Não considera versão nem hash — só presença.
+    /// </summary>
+    function TemDisparoDe(const AGatilhoID: string): Boolean;
+
+    /// <summary>
+    ///   Devolve o disparo do gatilho indicado, ou nil.
+    /// </summary>
+    function DisparoDe(const AGatilhoID: string): TDisparoGatilho;
+
+    /// <summary>
+    ///   Registra um disparo. Se já existia um disparo do mesmo
+    ///   gatilho, ele é substituído. Assume ownership do objeto.
+    /// </summary>
+    procedure RegistrarDisparo(const ADisparo: TDisparoGatilho);
+
+    /// <summary>
+    ///   Remove o disparo do gatilho indicado, se existir.
+    ///   Retorna True se removeu.
+    /// </summary>
+    function RemoverDisparo(const AGatilhoID: string): Boolean;
+
+    /// <summary>Remove todos os disparos (usado na reanálise).</summary>
+    procedure LimparDisparos;
+  end;
+
+  // ────────────────────────────────────────────────────────────
+  // Cena / Capítulo / Ato / Manuscrito (iguais)
   // ────────────────────────────────────────────────────────────
 
   TCena = class
@@ -126,10 +167,6 @@ type
     function ParagrafoPorOrdem(const AOrdem: Integer): TParagrafo;
     function TotalPalavras: Integer;
   end;
-
-  // ────────────────────────────────────────────────────────────
-  // Capítulo
-  // ────────────────────────────────────────────────────────────
 
   TCapitulo = class
   private
@@ -152,10 +189,6 @@ type
     function TemConteudo: Boolean;
   end;
 
-  // ────────────────────────────────────────────────────────────
-  // Ato
-  // ────────────────────────────────────────────────────────────
-
   TAto = class
   private
     FID: TID;
@@ -173,10 +206,6 @@ type
     function CapituloPorNumero(const ANumero: Integer): TCapitulo;
     function TotalPalavras: Integer;
   end;
-
-  // ────────────────────────────────────────────────────────────
-  // Manuscrito
-  // ────────────────────────────────────────────────────────────
 
   TManuscrito = class
   private
@@ -197,24 +226,17 @@ type
     property ArquivoOrigem: string read FArquivoOrigem write FArquivoOrigem;
     property Atos: TObjectList<TAto> read FAtos;
 
-    // Navegação
     function AtoPorNumero(const ANumero: Integer): TAto;
     function AtoDoCapitulo(const ANumeroCapitulo: Integer): TAto;
     function CapituloPorID(const AID: TID): TCapitulo;
     function CenaPorID(const AID: TID): TCena;
     function ParagrafoPorID(const AID: TID): TParagrafo;
 
-    // Estatísticas
     function TotalPalavras: Integer;
     function TotalCapitulos: Integer;
     function TotalCenas: Integer;
     function TotalParagrafos: Integer;
 
-    /// <summary>
-    ///   Cria um novo manuscrito a partir do Antes, com campos
-    ///   de edição inicializados (TextoOriginal := Texto,
-    ///   Status := pendente, Revisoes := vazio).
-    /// </summary>
     class function NovoAPartirDe(const AAntes: TManuscrito): TManuscrito;
   end;
 
@@ -222,31 +244,14 @@ type
 // Utilidades de texto
 // ────────────────────────────────────────────────────────────
 
-/// <summary>
-///   Conta palavras separadas por espaço em branco (inclui
-///   NBSP). Não trata pontuação como separador — é uma
-///   aproximação suficiente para o limite de 600.
-/// </summary>
 function ContarPalavras(const ATexto: string): Integer;
-
-/// <summary>Gera ID de Ato no formato "act-N".</summary>
 function GerarIDAto(const ANumero: Integer): TID;
-
-/// <summary>Gera ID de Capítulo no formato "cap-N".</summary>
 function GerarIDCapitulo(const ANumero: Integer): TID;
-
-/// <summary>Gera ID de Cena no formato "cap-N-cena-M".</summary>
 function GerarIDCena(const ANumeroCapitulo, ANumeroCena: Integer): TID;
-
-/// <summary>Gera ID de Parágrafo no formato "cap-N-cena-M-pXX".</summary>
 function GerarIDParagrafo(const ANumeroCapitulo, ANumeroCena,
   ANumeroParagrafo: Integer): TID;
 
 implementation
-
-// ────────────────────────────────────────────────────────────
-// Utilidades
-// ────────────────────────────────────────────────────────────
 
 function ContarPalavras(const ATexto: string): Integer;
 var
@@ -289,9 +294,7 @@ begin
     [ANumeroCapitulo, ANumeroCena, ANumeroParagrafo]);
 end;
 
-// ────────────────────────────────────────────────────────────
-// TParagrafo
-// ────────────────────────────────────────────────────────────
+{ TParagrafo }
 
 constructor TParagrafo.Create;
 begin
@@ -299,10 +302,12 @@ begin
   FStatus := spPendente;
   FNumChunks := 1;
   FRevisoes := TObjectList<TRevisaoParagrafo>.Create;
+  FGatilhosDisparados := TObjectList<TDisparoGatilho>.Create;
 end;
 
 destructor TParagrafo.Destroy;
 begin
+  FGatilhosDisparados.Free;
   FRevisoes.Free;
   inherited;
 end;
@@ -335,9 +340,76 @@ begin
   FStatus := spRevisadoManual;
 end;
 
-// ────────────────────────────────────────────────────────────
-// TCena
-// ────────────────────────────────────────────────────────────
+function TParagrafo.TemDisparo: Boolean;
+begin
+  Result := FGatilhosDisparados.Count > 0;
+end;
+
+function TParagrafo.TemDisparoDe(const AGatilhoID: string): Boolean;
+begin
+  Result := Assigned(DisparoDe(AGatilhoID));
+end;
+
+function TParagrafo.DisparoDe(const AGatilhoID: string): TDisparoGatilho;
+var
+  D: TDisparoGatilho;
+begin
+  for D in FGatilhosDisparados do
+    if D.GatilhoID = AGatilhoID then
+      Exit(D);
+  Result := nil;
+end;
+
+procedure TParagrafo.RegistrarDisparo(const ADisparo: TDisparoGatilho);
+var
+  Idx: Integer;
+  D: TDisparoGatilho;
+begin
+  if ADisparo = nil then
+    raise EValorInvalido.Create('Disparo não pode ser nil.');
+  if ADisparo.GatilhoID = '' then
+    raise EValorInvalido.Create('Disparo precisa de GatilhoID.');
+
+  Idx := -1;
+  for D in FGatilhosDisparados do
+    if D.GatilhoID = ADisparo.GatilhoID then
+    begin
+      Idx := FGatilhosDisparados.IndexOf(D);
+      Break;
+    end;
+
+  if Idx >= 0 then
+    FGatilhosDisparados[Idx] := ADisparo  // substitui (libera o antigo)
+  else
+    FGatilhosDisparados.Add(ADisparo);
+end;
+
+function TParagrafo.RemoverDisparo(const AGatilhoID: string): Boolean;
+var
+  D: TDisparoGatilho;
+  Idx: Integer;
+begin
+  Idx := -1;
+  for D in FGatilhosDisparados do
+    if D.GatilhoID = AGatilhoID then
+    begin
+      Idx := FGatilhosDisparados.IndexOf(D);
+      Break;
+    end;
+
+  if Idx < 0 then
+    Exit(False);
+
+  FGatilhosDisparados.Delete(Idx);
+  Result := True;
+end;
+
+procedure TParagrafo.LimparDisparos;
+begin
+  FGatilhosDisparados.Clear;
+end;
+
+{ TCena }
 
 constructor TCena.Create;
 begin
@@ -380,9 +452,7 @@ begin
     Inc(Result, P.NumPalavras);
 end;
 
-// ────────────────────────────────────────────────────────────
-// TCapitulo
-// ────────────────────────────────────────────────────────────
+{ TCapitulo }
 
 constructor TCapitulo.Create;
 begin
@@ -430,9 +500,7 @@ begin
   Result := FCenas.Count > 0;
 end;
 
-// ────────────────────────────────────────────────────────────
-// TAto
-// ────────────────────────────────────────────────────────────
+{ TAto }
 
 constructor TAto.Create;
 begin
@@ -475,9 +543,7 @@ begin
     Inc(Result, C.TotalPalavras);
 end;
 
-// ────────────────────────────────────────────────────────────
-// TManuscrito
-// ────────────────────────────────────────────────────────────
+{ TManuscrito }
 
 constructor TManuscrito.Create;
 begin
@@ -649,7 +715,7 @@ begin
             ParNovo.ID := ParAntes.ID;
             ParNovo.Ordem := ParAntes.Ordem;
             ParNovo.Texto := ParAntes.Texto;
-            ParNovo.TextoOriginal := ParAntes.Texto; // cópia para rollback
+            ParNovo.TextoOriginal := ParAntes.Texto;
             ParNovo.Hash := ParAntes.Hash;
             ParNovo.NumPalavras := ParAntes.NumPalavras;
             ParNovo.NumChunks := ParAntes.NumChunks;
