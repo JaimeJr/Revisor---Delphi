@@ -260,6 +260,17 @@ procedure ConstruirSemente(const ACatalogo: TCatalogoVicios);
 begin
   // ─── Excesso / repetição ───
   AdicionarVicio(ACatalogo,
+    'anafora',
+    'Anáfora',
+    'Repetição da mesma palavra ou expressão no início de frases dentro do parágrafo' +
+    'consecutivas, criando ritmo monótono. Exemplo: ".De .De .De"/".E .E .E"/".Para .Para .Para',
+    'Remonte o parágrafo variando a ordem sintática, fundindo frases removendo o conector repetitivo' +
+    'ou invertendo sujeito/objeto. Se o ritmo ternário for intencional, ' +
+    'quebre-o na última ocorrência.',
+    '3+ frases seguidas cujo prefixo (2-3 palavras iniciais) é idêntico.',
+    False);
+
+  AdicionarVicio(ACatalogo,
     'tricolon',
     'Tricolon mecânico',
     'Três elementos com a mesma estrutura gramatical em sequência ' +
@@ -275,17 +286,6 @@ begin
     '3 frases curtas seguidas com prefixo gramatical idêntico ' +
     '(mesmo sujeito+verbo ou mesmo conector), OU 3 substantivos em ' +
     'lista com paralelismo, OU 3 negações seguidas.',
-    False);
-
-  AdicionarVicio(ACatalogo,
-    'anafora',
-    'Anáfora',
-    'Repetição da mesma palavra ou expressão no início de frases ' +
-    'consecutivas, criando ritmo monótono.',
-    'Remonte o parágrafo variando a ordem sintática, fundindo frases ' +
-    'ou invertendo sujeito/objeto. Se o ritmo ternário for intencional, ' +
-    'quebre-o na última ocorrência.',
-    '3+ frases seguidas cujo prefixo (2-3 palavras iniciais) é idêntico.',
     False);
 
   AdicionarVicio(ACatalogo,

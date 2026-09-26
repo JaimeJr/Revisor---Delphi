@@ -161,6 +161,9 @@ begin
   for Par in ACena.Paragrafos do
     for VicioID in FRegistry.ViciosCobertos do
     begin
+      if Par.Status = spAceito then
+        Continue;
+
       Gatilho := FRegistry.GatilhoPorVicio(VicioID);
       if not Assigned(Gatilho) then
         Continue;

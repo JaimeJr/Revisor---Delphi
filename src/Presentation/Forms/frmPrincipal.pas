@@ -557,9 +557,6 @@ var
   LarguraTexto, AlturaTexto: Integer;
   CorTexto: TColor;
 begin
-  // ─── Painel da linha — posicionamento manual ───
-  // Sem Align: o TScrollBox nativo do Windows precisa ver o
-  // bounding box real dos filhos para habilitar o scroll.
   Pnl := TPanel.Create(scrollParagrafos);
   Pnl.Parent := scrollParagrafos;
   Pnl.BevelOuter := bvNone;
@@ -624,7 +621,7 @@ begin
   lblTexto.Margins.Left := 10;
   LblTexto.Caption := APar.Texto;
   LblTexto.Font.Assign(Self.Font);
-  if APar.TemDisparo then
+  if APar.TemDisparo and (APar.Status <> spAceito) and (APar.Status <> spRevisadoManual) then
     CorTexto := clRed
   else
     CorTexto := CorDoStatus(APar.Status);
