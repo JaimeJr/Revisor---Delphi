@@ -77,7 +77,7 @@ type
     FRecusarUC: TRecusarEdicaoUseCase;
     FMarcarRevisadoUC: TMarcarRevisadoManualUseCase;
     FManterVicioUC: TManterVicioUseCase;
-    FMediador: TMediadorApp;
+    FMediador: IMediadorApp;
     FPresenter: TPrincipalPresenter;
   public
     constructor Create;
@@ -179,7 +179,7 @@ begin
   if not Assigned(AView) then
     raise Exception.Create('TfrmPrincipal não pode ser nil.');
 
-  FPresenter := TPrincipalPresenter.Create(
+    FPresenter := TPrincipalPresenter.Create(
     AView,
     FMediador,
     FImportarUC,
@@ -187,6 +187,7 @@ begin
     FRevisarUC,
     FManterVicioUC,
     FMarcarRevisadoUC,
+    FAntesRepo,
     FNovoRepo,
     FRespostaRepo,
     FViciosRepo,
@@ -198,7 +199,6 @@ end;
 procedure TCompositionRoot.Finalizar;
 begin
   FreeAndNil(FPresenter);
-  FreeAndNil(FMediador);
   FreeAndNil(FManterVicioUC);
   FreeAndNil(FMarcarRevisadoUC);
   FreeAndNil(FRecusarUC);

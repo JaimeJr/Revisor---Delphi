@@ -577,6 +577,7 @@ begin
   LblTexto.Width := LarguraTexto;
   LblTexto.Height := AlturaTexto;
   LblTexto.AutoSize := False;
+  LblTexto.Font.Size := 20;
   LblTexto.WordWrap := True;
   lblTexto.Margins.Left := 10;
   LblTexto.Caption := APar.Texto;

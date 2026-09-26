@@ -7,16 +7,13 @@
 
   Modelo:
     • Árvore: Ato > Capítulo > Cena. Só cena carrega o painel.
-    • Painel direito: uma cena por vez, com checkbox por
-      parágrafo.
+    • Painel direito: uma cena por vez, checkbox por parágrafo.
     • Revisão: usa os marcados; se nenhum, todos da cena.
-    • Marcar revisados: mesma regra.
 
-  Caminhos da sessão:
-    • FCaminhoAntes, FCaminhoNovo, FCaminhoVicios,
-      FCaminhoParseLog, FCaminhoEnvio, FCaminhoResposta.
-    • Envio e Resposta são derivados do Antes na importação.
-    • Todos são propagados para TChamada e TContextoRevisao.
+  Retomada de sessão:
+    • Se _antes.json e _novo.json já existem ao importar,
+      oferece continuar de onde parou (sem rodar o parser).
+    • Se o usuário escolhe reimportar, sobrescreve tudo.
   ─────────────────────────────────────────────────────────────
 }
 
@@ -33,6 +30,7 @@ uses
   UManterVicioUseCase,
   UMarcarRevisadoManualUseCase,
   UCommandStack,
+  UIAntesRepository,
   UINovoRepository,
   UIRespostaRepository,
   UIViciosRepository,
@@ -55,6 +53,7 @@ type
     FManterVicioUC: TManterVicioUseCase;
     FMarcarRevisadoUC: TMarcarRevisadoManualUseCase;
 
+    FAntesRepo: IAntesRepository;
     FNovoRepo: INovoRepository;
     FRespostaRepo: IRespostaRepository;
     FViciosRepo: IViciosRepository;
@@ -101,6 +100,14 @@ type
       const ASelecoes: TArray<TSelecaoUsuario>): Boolean;
     function ResolverParagrafosAlvo(const ACena: TCena): TArray<TID>;
 
+    /// <summary>
+    ///   Carrega uma sessão existente (Novo.JSON + parse.log).
+    ///   Não roda o parser nem sobrescreve nada.
+    ///   Lança exceção em falha (o chamador mostra o erro).
+    /// </summary>
+    procedure ContinuarSessao(const ACaminhoAntes, ACaminhoNovo,
+      ACaminhoVicios, ACaminhoParseLog: string);
+
     function DerivarCaminhoVicios(const APastaDestino: string): string;
     function DerivarCaminhoEnvio(const ACaminhoAntes: string): string;
     function DerivarCaminhoResposta(const ACaminhoAntes: string): string;
@@ -115,6 +122,7 @@ type
       const ARevisarUC: TRevisarCenaUseCase;
       const AManterVicioUC: TManterVicioUseCase;
       const AMarcarRevisadoUC: TMarcarRevisadoManualUseCase;
+      const AAntesRepo: IAntesRepository;
       const ANovoRepo: INovoRepository;
       const ARespostaRepo: IRespostaRepository;
       const AViciosRepo: IViciosRepository;
@@ -139,6 +147,7 @@ constructor TPrincipalPresenter.Create(const AView: IPrincipalView;
   const ARevisarUC: TRevisarCenaUseCase;
   const AManterVicioUC: TManterVicioUseCase;
   const AMarcarRevisadoUC: TMarcarRevisadoManualUseCase;
+  const AAntesRepo: IAntesRepository;
   const ANovoRepo: INovoRepository;
   const ARespostaRepo: IRespostaRepository;
   const AViciosRepo: IViciosRepository;
@@ -160,6 +169,8 @@ begin
     raise EValorInvalido.Create('TManterVicioUseCase não pode ser nil.');
   if not Assigned(AMarcarRevisadoUC) then
     raise EValorInvalido.Create('TMarcarRevisadoManualUseCase não pode ser nil.');
+  if not Assigned(AAntesRepo) then
+    raise EValorInvalido.Create('IAntesRepository não pode ser nil.');
   if not Assigned(ANovoRepo) then
     raise EValorInvalido.Create('INovoRepository não pode ser nil.');
   if not Assigned(ARespostaRepo) then
@@ -176,6 +187,7 @@ begin
   FRevisarUC := ARevisarUC;
   FManterVicioUC := AManterVicioUC;
   FMarcarRevisadoUC := AMarcarRevisadoUC;
+  FAntesRepo := AAntesRepo;
   FNovoRepo := ANovoRepo;
   FRespostaRepo := ARespostaRepo;
   FViciosRepo := AViciosRepo;
@@ -215,13 +227,15 @@ begin
 end;
 
 // ────────────────────────────────────────────────────────────
-// Handlers
+// Importação / retomada
 // ────────────────────────────────────────────────────────────
 
 procedure TPrincipalPresenter.OnImportar;
 var
   CaminhoDocx, PastaDestino: string;
+  CaminhoAntes, CaminhoNovo, CaminhoVicios, CaminhoParseLog: string;
   Importacao: TImportacao;
+  SessaoExiste: Boolean;
 begin
   CaminhoDocx := FView.PerguntarCaminhoDocx;
   if CaminhoDocx = '' then
@@ -230,6 +244,42 @@ begin
   PastaDestino := TPath.Combine(
     TPath.GetDirectoryName(CaminhoDocx), 'EditorManuscrito_dados');
 
+  // Deriva todos os caminhos antes de decidir.
+  CaminhoAntes := TPath.Combine(PastaDestino,
+    TPath.GetFileNameWithoutExtension(CaminhoDocx) + '_antes.json');
+  CaminhoNovo := TPath.Combine(PastaDestino,
+    TPath.GetFileNameWithoutExtension(CaminhoDocx) + '_novo.json');
+  CaminhoVicios := DerivarCaminhoVicios(PastaDestino);
+  CaminhoParseLog := TPath.Combine(PastaDestino,
+    TPath.GetFileNameWithoutExtension(CaminhoDocx) + '_parse.log');
+
+  // Existe sessão anterior?
+  SessaoExiste := FAntesRepo.Existe(CaminhoAntes) and
+                  FNovoRepo.Existe(CaminhoNovo);
+
+  if SessaoExiste then
+  begin
+    if FView.Confirmar(
+      'Existe uma sessão anterior para este manuscrito.' + sLineBreak +
+      'Continuar de onde parou?' + sLineBreak + sLineBreak +
+      'Sim = continuar a sessão (recomendado)' + sLineBreak +
+      'Não = reimportar do .docx e APAGAR as alterações') then
+    begin
+      try
+        ContinuarSessao(CaminhoAntes, CaminhoNovo,
+          CaminhoVicios, CaminhoParseLog);
+      except
+        on E: Exception do
+        begin
+          EncerrarSessaoAtual;
+          FView.ExibirErro('Falha ao continuar sessão: ' + E.Message);
+        end;
+      end;
+      Exit;
+    end;
+  end;
+
+  // Importação nova (sobrescreve).
   Importacao := nil;
   try
     EncerrarSessaoAtual;
@@ -238,7 +288,7 @@ begin
       procedure
       begin
         Importacao := FImportarUC.Executar(
-          CaminhoDocx, PastaDestino, DerivarCaminhoVicios(PastaDestino));
+          CaminhoDocx, PastaDestino, CaminhoVicios);
       end);
 
     if Importacao = nil then
@@ -277,6 +327,47 @@ begin
     end;
   end;
 end;
+
+procedure TPrincipalPresenter.ContinuarSessao(const ACaminhoAntes,
+  ACaminhoNovo, ACaminhoVicios, ACaminhoParseLog: string);
+begin
+  EncerrarSessaoAtual;
+
+  // Carrega Novo.JSON (com todos os status e edições aceitas).
+  FManuscrito := FNovoRepo.Carregar(ACaminhoNovo);
+  if FManuscrito = nil then
+    raise EOperacaoInvalida.CreateFmt(
+      'Não foi possível carregar o Novo.JSON em "%s".', [ACaminhoNovo]);
+
+  // Carrega parse.log (anomalias). Se não existir, segue sem.
+  try
+    FParseLog := FAntesRepo.CarregarLog(ACaminhoAntes);
+  except
+    FParseLog := nil;
+  end;
+
+  FCaminhoAntes := ACaminhoAntes;
+  FCaminhoNovo := ACaminhoNovo;
+  FCaminhoVicios := ACaminhoVicios;
+  FCaminhoParseLog := ACaminhoParseLog;
+  FCaminhoEnvio := DerivarCaminhoEnvio(ACaminhoAntes);
+  FCaminhoResposta := DerivarCaminhoResposta(ACaminhoAntes);
+  FCenaSelecionadaAtual := '';
+
+  PopularViewAPartirDoManuscrito;
+  PopularComboViciosDoCatalogo;
+  AtualizarBotoes;
+  AtualizarCustoAcumulado;
+
+  FView.ExibirInfo(Format(
+    'Sessão continuada.' + sLineBreak +
+    'Manuscrito: %s',
+    [ExtractFileName(ACaminhoNovo)]));
+end;
+
+// ────────────────────────────────────────────────────────────
+// Demais handlers
+// ────────────────────────────────────────────────────────────
 
 procedure TPrincipalPresenter.OnExportar;
 var
@@ -537,7 +628,7 @@ begin
 end;
 
 // ────────────────────────────────────────────────────────────
-// Auxiliares — popular View
+// Popular View
 // ────────────────────────────────────────────────────────────
 
 procedure TPrincipalPresenter.PopularViewAPartirDoManuscrito;
